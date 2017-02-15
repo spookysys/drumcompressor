@@ -1,4 +1,3 @@
-
 block_size = 8;
 [data_in, sample_rate] = load_input('kick-808');
 [bass, noise_env, noise_color] = prepare(data_in, sample_rate, block_size);
@@ -166,12 +165,20 @@ end
 
 
 function [palette, error] = find_palette(data_in, weights)
-    palette = [-0.5, -0.1, 0.1, 0.5];
+    palette = [0, 0, 0, 0];
     error = get_compression_error(palette, data_in, weights);
     disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-    for temperature = linspace(.4, -0.1, 256*50)
-        clamped_temperature = max(temperature, 1./256.);
-        test_palette = palette + randn(size(palette))*clamped_temperature;
+ 
+    %boost = 2;
+    %hi = ones(1, boost*256)/2.;
+    %mid = ones(1, boost*256)/64.;
+    %lo = ones(1, boost*256)/256.;
+    %for temperature = [hi mid lo]
+        
+    t = linspace(.5, -.25, 256*6);
+    for temperature = t
+        temperature_clamped = max(1./256, temperature);
+        test_palette = palette + randn(size(palette)) * temperature_clamped;
         test_palette = max(-1.0, min(1.0, test_palette));
         test_palette = sort(test_palette);
         test_error = get_compression_error(test_palette, data_in, weights);
@@ -182,4 +189,6 @@ function [palette, error] = find_palette(data_in, weights)
         end
     end
 end
+
+
 
