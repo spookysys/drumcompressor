@@ -65,7 +65,7 @@ function [bass, bass_env_fit, noise_env_fit, noise_col_b, noise_col_a] = prepare
     
     bass_reduced = bass(1 : block_size : end);
     bass_norm_reduced = bass_norm(1 : block_size : end);
-    bass_env_fit_vals_reduced = bass_env_fit_vals(1 : block_size : end);
+    bass_norm_reduced = bass_norm(1 : block_size : end);
     disp(['Finding palette for bass'])
     [bass_palette, bass_err] = find_palette(bass_reduced, ones(length(bass_reduced)));
     disp(['Finding palette for bass_norm'])
@@ -151,9 +151,9 @@ function total_error = get_compression_error(palette, data_in, weights)
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
         if (prediction >= 0)
-            palette_adj = -palette;
-        else
             palette_adj = palette;
+        else
+            palette_adj = -palette;
         end
         recon_opts = prediction + palette_adj;
         error_opts = ((recon_opts - val) * weights(i)) .^ 2;
@@ -166,14 +166,13 @@ end
 
 
 function [palette, error] = find_palette(data_in, weights)
-    palette = [-0.5, -0.1, 0.1, 0.5];
+    palette = [-1, -0.25, 0.25, 1];
     error = get_compression_error(palette, data_in, weights);
     disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-    for temperature = linspace(.4, -0.1, 256*50)
-        clamped_temperature = max(temperature, 1./256.);
+    for temperature = linspace(1.25, -0.25, 256*16)
+        clamped_temperature = max(min(temperature, 1.0), 1.0/256);
         test_palette = palette + randn(size(palette))*clamped_temperature;
         test_palette = max(-1.0, min(1.0, test_palette));
-        test_palette = sort(test_palette);
         test_error = get_compression_error(test_palette, data_in, weights);
         if (test_error < error)
             error = test_error;
