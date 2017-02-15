@@ -1,12 +1,16 @@
 block_size = 8;
 adpcm_bits = 2;
 
-[data_in, sample_rate] = load_input('kick-cultivator', block_size);
+[data_in, sample_rate] = load_input('snare-808', block_size);
 audiowrite('orig.wav', data_in, sample_rate);
 
-[bass_orig, treble_orig, bass_env_values, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size);
+[bass_orig, bass_env_values, bass_cut_point, treble_orig, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size);
 audiowrite('bass_orig.wav', bass_orig, round(sample_rate/8));
 audiowrite('treble_orig.wav', treble_orig, round(sample_rate/8));
+
+bass_orig = bass_orig(1:bass_cut_point);
+bass_env_values = bass_env_values(1:bass_cut_point);
+audiowrite('bass_cut.wav', bass_orig, round(sample_rate/8));
 
 bass_4bit = digitize_bass(bass_orig);
 audiowrite('bass_4bit.wav', bass_4bit, round(sample_rate/8));
@@ -16,23 +20,37 @@ audiowrite('treble_recon.wav', treble_recon, sample_rate);
 
 bass_env_identity = ones(length(bass_env_values), 1);
 bass_norm = bass_orig ./ bass_env_values;
-[bass_adpcm, bass_palette] = compress_adpcm(bass_norm, bass_env_identity, adpcm_bits);
-bass_norm_recon = decompress_adpcm(bass_adpcm, bass_palette);
+% bass_norm = min(10, max(-10, bass_norm));
+[bass_norm_adpcm, bass_norm_palette] = compress_adpcm(bass_norm, bass_env_identity, adpcm_bits);
+bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette);
 bass_recon = bass_norm_recon .* bass_env_values;
 audiowrite('bass_recon.wav', bass_recon, round(sample_rate/8));
 
+[bass_flat_adpcm, bass_flat_palette] = compress_adpcm(bass_orig, bass_env_identity, adpcm_bits);
+bass_flat_recon = decompress_adpcm(bass_flat_adpcm, bass_flat_palette);
+audiowrite('bass_flat_recon.wav', bass_flat_recon, round(sample_rate/8));
+
 
 % mix and output
-bass_upsampled = resample(bass_orig, block_size, 1);
-bass_recon_upsampled = resample(bass_recon, block_size, 1);
+padding = zeros(length(data_in)/block_size - length(bass_orig), 1);
+bass_orig_padded = [bass_orig; padding];
+bass_recon_padded = [bass_recon; padding];
+bass_flat_recon_padded = [bass_flat_recon; padding];
+bass_upsampled = resample(bass_orig_padded, block_size, 1);
+bass_recon_upsampled = resample(bass_recon_padded, block_size, 1);
+bass_flat_recon_upsampled = resample(bass_flat_recon_padded, block_size, 1);
 mix00 = bass_upsampled + treble_orig;
 mix01 = bass_upsampled + treble_recon;
 mix10 = bass_recon_upsampled + treble_orig;
 mix11 = bass_recon_upsampled + treble_recon;
+mix20 = bass_flat_recon_upsampled + treble_orig;
+mix21 = bass_flat_recon_upsampled + treble_recon;
 audiowrite('mix00.wav', mix00, sample_rate);
 audiowrite('mix01.wav', mix01, sample_rate);
 audiowrite('mix10.wav', mix10, sample_rate);
 audiowrite('mix11.wav', mix11, sample_rate);
+audiowrite('mix20.wav', mix20, sample_rate);
+audiowrite('mix21.wav', mix21, sample_rate);
 
 
 % Load wav-file
@@ -46,12 +64,13 @@ function [data, sample_rate] = load_input(stub, block_size)
 end
 
 % Prepare data for compression
-function [bass_orig, treble_orig, bass_env_values, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size)
+function [bass_orig, bass_env_values, bass_cut_point, treble_orig, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size)
 	nyquist = sample_rate/2.0;
 	separation_freq = nyquist/block_size/2.0;
 
     % separate and resample bass
     bass_orig = resample(data_in, 1, block_size);
+    bass_orig = normalize(bass_orig);
     
 	% separate treble
 	[sep_treble_b, sep_treble_a] = butter(6, separation_freq / nyquist, 'high');
@@ -67,8 +86,19 @@ function [bass_orig, treble_orig, bass_env_values, treble_env_fit, treble_b, tre
     
     % fit bass volume envelope
     bass_env_fit_x = (1:length(bass_orig))';
-    bass_env_fit = fit(bass_env_fit_x, bass_env, 'exp1');
+    bass_env_fit = fit(bass_env_fit_x, bass_env, 'exp2');
     bass_env_values = feval(bass_env_fit, bass_env_fit_x);
+    
+    % cut bass at the point where volume drops below 1/256
+    % but also make sure envelope never goes below that point
+    disp(max(bass_env_values));
+    bass_cut_point = 0;
+    limit = 1. / 2^10;
+    for i = 1:length(bass_orig)
+        if (bass_env_values(i) > limit)
+            bass_cut_point = i;
+        end
+    end
     
     % extract treble color
     num_freqs = 1024;
@@ -131,7 +161,7 @@ end
 
 
 function [palette, error] = find_palette(data_in, weights, bits)
-    palette = zeros(1, 2^bits); %[0, 0, 0, 0, 0, 0, 0, 0];
+    palette = zeros(1, 2^bits);
     error = get_compression_error(data_in, palette, weights);
     disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
 
@@ -139,10 +169,10 @@ function [palette, error] = find_palette(data_in, weights, bits)
     t = linspace(.5, -.25, 256*60);
     for temperature = t
         temperature_clamped = max(1./256, temperature);
-        % assert(test_palette(1) == 0); % keep it at 0
-        test_palette = palette + randn(1, length(palette)) * temperature_clamped;
-        test_palette = max(-1.0, min(1.0, test_palette));
-        test_palette = sort(test_palette);
+        assert(test_palette(1) == 0); % keep it at 0
+        test_palette(2:end) = palette(2:end) + randn(1, length(palette)-1) * temperature_clamped;
+        test_palette(2:end) = max(-1.0, min(1.0, test_palette(2:end)));
+        test_palette(2:end) = sort(test_palette(2:end));
         test_error = get_compression_error(data_in, test_palette, weights);
         if (test_error < error)
             error = test_error;
