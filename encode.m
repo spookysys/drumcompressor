@@ -15,7 +15,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     audiowrite([checkdir 'orig.wav'], data_in, sample_rate);
 
-    [bass, bass_env_values, treble, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size);
+    [bass, bass_env_fit_values, treble, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size);
 
     audiowrite([checkdir 'bass.wav'], bass, round(sample_rate/block_size));
     audiowrite([checkdir 'treble.wav'], treble, sample_rate);
@@ -23,11 +23,11 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     treble_recon = reconstruct_treble(length(data_in), treble_env_fit, treble_b, treble_a, sample_rate);
     audiowrite([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
-    bass_env_identity = ones(length(bass_env_values), 1);
-    bass_norm = bass ./ bass_env_values;
+    bass_env_identity = ones(length(bass), 1);
+    bass_norm = bass ./ bass_env_fit_values;
     [bass_norm_adpcm, bass_norm_palette] = compress_adpcm(bass_norm, bass_env_identity, adpcm_bits);
     bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette);
-    bass_recon = bass_norm_recon .* bass_env_values;
+    bass_recon = bass_norm_recon .* bass_env_fit_values;
     audiowrite([checkdir 'bass_recon.wav'], bass_recon, round(sample_rate/block_size));
 
     % mix and output
@@ -51,7 +51,7 @@ function [data, sample_rate] = load_input(filename, block_size)
 end
 
 % Prepare data for compression
-function [bass, bass_env_values, treble, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size)
+function [bass, bass_env_fit_values, treble, treble_env_fit, treble_b, treble_a] = separate(data_in, sample_rate, block_size)
 	nyquist = sample_rate/2.0;
 	separation_freq = nyquist/block_size/2.0;
 
@@ -59,22 +59,25 @@ function [bass, bass_env_values, treble, treble_env_fit, treble_b, treble_a] = s
     bass = resample(data_in, 1, block_size);
     bass = normalize(bass);
 
-    % fit bass volume envelope
-    bass_env = abs(hilbert(bass));
-    bass_env_fit_x = (1:length(bass))';
-    bass_env_fit = fit(bass_env_fit_x, bass_env, 'exp2');
-    bass_env_values = feval(bass_env_fit, bass_env_fit_x);
+    % calculate bass volume envelope
+    bass_env_real_values = abs(hilbert(bass));
     
-    % cut bass at the point where volume drops below 1/256
+    % fit bass volume envelope
+    bass_env_x = (1:length(bass))';    
+    bass_env_fit = fit(bass_env_x, bass_env_real_values, 'exp2');
+    bass_env_fit_values = feval(bass_env_fit, bass_env_x);
+    
+    % cut bass at the point where fitted volume drops below 1/256
     bass_cut_point = 0;
     limit = 1. / 2^8;
     for i = 1:length(bass)
-        if (bass_env_values(i) > limit)
+        if (bass_env_fit_values(i) > limit)
             bass_cut_point = i;
         end
     end
     bass = bass(1:bass_cut_point);
-    bass_env_values = bass_env_values(1:bass_cut_point);
+    bass_env_real_values = bass_env_real_values(1:bass_cut_point);
+    bass_env_fit_values = bass_env_fit_values(1:bass_cut_point);
     
     
 	% separate treble
@@ -155,10 +158,9 @@ function [palette, error] = find_palette(data_in, weights, bits)
     t = linspace(.5, -.25, 256*60);
     for temperature = t
         temperature_clamped = max(1./256, temperature);
-        assert(test_palette(1) == 0); % keep it at 0
-        test_palette(2:end) = palette(2:end) + randn(1, length(palette)-1) * temperature_clamped;
-        test_palette(2:end) = max(-1.0, min(1.0, test_palette(2:end)));
-        test_palette(2:end) = sort(test_palette(2:end));
+        test_palette = palette + randn(1, length(palette)) * temperature_clamped;
+        test_palette = max(-1.0, min(1.0, test_palette));
+        test_palette = sort(test_palette);
         test_error = get_compression_error(data_in, test_palette, weights);
         if (test_error < error)
             error = test_error;
