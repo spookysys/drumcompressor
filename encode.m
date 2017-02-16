@@ -32,7 +32,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / length(data_in)) '\r\n']);
     fclose(fid);
 
-    treble_recon = reconstruct_treble(length(data_in), treble_env_fit, treble_color_b, treble_color_a, sample_rate);
+    treble_recon = reconstruct_treble(length(data_in), treble_env_fit, treble_color_b, treble_color_a);
     audiowrite([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
     bass_env_fit_x = (0:length(bass_sig_norm)-1)';
@@ -55,72 +55,79 @@ end
 % Load wav-file
 function [data, sample_rate] = load_input(filename, block_size)
 	[data, sample_rate] = audioread(filename);
-    padding = ceil(length(data) / block_size) * block_size - length(data); % pad
-    pad = zeros(padding, 1);
-    data = [data; pad]; % pad
-    scaler = max(abs(data)); % normalize
-    data = data / scaler; % normalize
+    data = pad(data, block_size); % pad
+    data = normalize(data); % normalize
 end
 
 % Prepare data for compression
 function [env_fit, color_b, color_a] = analyze_treble(data_in, sample_rate, block_size, checkdir)
-	nyquist = sample_rate/2.0;
+    nyquist = sample_rate/2.0;
 	separation_freq = nyquist/block_size/2.0;
 
-    % separate treble
+    % Separate treble
 	[sep_b, sep_a] = butter(6, separation_freq / nyquist, 'high');
-	sig = filter(sep_b, sep_a, data_in);
-    sig = normalize(sig); % TODO: Amplitude correction
-    audiowrite([checkdir 'treble.wav'], sig, sample_rate);
-	    
-	% find volume envelopes
-	env = abs(hilbert(sig));
+	treble = filter(sep_b, sep_a, data_in);
+    audiowrite([checkdir 'treble.wav'], treble, sample_rate);
+
+	% Find volume envelopes
+	env = abs(hilbert(treble));
     env_fit_x = (0:length(data_in)-1)';
     env_fit = fit(env_fit_x, env, 'exp2');
-
-    % extract treble color
-    num_freqs = 1024;
-    color_h = fft(sig, num_freqs);
+    
+    % Normalize treble signal
+    env_smooth = smooth(env, 50);
+    treble_norm = treble ./ env_smooth;
+    audiowrite([checkdir 'treble_norm.wav'], treble_norm, sample_rate);
+    
+    % Extract treble color
+    num_freqs = 2^18;
+    color_h = fft(treble_norm, num_freqs);
+    color_h = mps(color_h);
     color_h = color_h(1:num_freqs/2+1);
     color_w = (0:(num_freqs/2)) * (2*pi)/num_freqs;
-    [color_b, color_a] = invfreqz(color_h, color_w, 2, 2);
-    color_ab_scaler = max(abs([color_a(2:end) color_b]));
-    color_a = color_a / color_ab_scaler;
-    color_b = color_b / color_ab_scaler;
-end
+    [color_b, color_a] = invfreqz(color_h, color_w, 2, 2, [], 100, 0.01);
+    %figure; zplane(color_b, color_a);
+ 
+    % Adjust volume empirically
+    white = rand(length(data_in), 1) * 2 - 1;
+    colored = filter(color_b, color_a, white);
+    volume_adjustment = mean(abs(hilbert(treble_norm))) / mean(abs(hilbert(colored)));
+    color_b = color_b * volume_adjustment;
+ end
 
 
 % Prepare data for compression
-function [env_fit, sig_norm] = analyze_bass(data_in, sample_rate, block_size, checkdir)
+function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, checkdir)
 	% extract and resample bass
-    sig = resample(data_in, 1, block_size);
-    audiowrite([checkdir 'bass.wav'], sig, round(sample_rate/block_size));
+    bass = resample(data_in, 1, block_size);
+    audiowrite([checkdir 'bass.wav'], bass, round(sample_rate/block_size));
     
     % calculate bass volume envelope
-    env = abs(hilbert(sig));
+    env = abs(hilbert(bass));
     env = smooth(env, 50);
     
     % fit volume envelope
-    env_fit_x = (0:length(sig)-1)';
+    env_fit_x = (0:length(bass)-1)';
     env_fit = fit(env_fit_x, env, 'exp2');
     
     % cut bass at the point where fitted volume drops below 1/256
     cut_point = 0;
     limit = 1. / 2^8;
-    for i = 1:length(sig)
+    for i = 1:length(bass)
         vol_real = env(i);
         vol_fit = feval(env_fit, i-1);
         if (vol_real > limit && vol_fit > limit)
             cut_point = i;
         end
     end
-    sig = sig(1:cut_point);
+    bass = bass(1:cut_point);
     env = env(1:cut_point);
-    audiowrite([checkdir 'bass_cut.wav'], sig, round(sample_rate/block_size));
+    env = env(1:cut_point);
+    audiowrite([checkdir 'bass_cut.wav'], bass, round(sample_rate/block_size));
 
     % normalize bass to fit curve
-    sig_norm = sig ./ env;
-    audiowrite([checkdir 'bass_norm.wav'], sig_norm, round(sample_rate/block_size));
+    bass_norm = bass ./ env;
+    audiowrite([checkdir 'bass_norm.wav'], bass_norm, round(sample_rate/block_size));
 end
 
 
@@ -218,14 +225,11 @@ function data_out = decompress_adpcm(data_in, palette)
 end
 
 
-function data_out = reconstruct_treble(num_samples, env_fit, treble_b, treble_a, sample_rate)
+function data_out = reconstruct_treble(num_samples, env_fit, color_b, color_a)
     white = rand(num_samples, 1) * 2 - 1;
-
-    colored = filter(treble_b, treble_a, white);
-    colored = normalize(colored);
-
-    env_fit_x = (1:num_samples);
-    env_values = feval(env_fit, env_fit_x); 
+    colored = filter(color_b, color_a, white);
+    env_fit_x = (0:num_samples-1)';
+    env_values = feval(env_fit, env_fit_x);
     data_out = colored .* env_values;
 end
 
@@ -233,4 +237,84 @@ end
 function [data_out, scaler] = normalize(data_in) 
     scaler = max(abs(data_in));
     data_out = data_in / scaler;
+end
+
+function data = pad(data_in, block_size)
+    num = ceil(length(data_in) / block_size) * block_size - length(data_in);
+    padding = zeros(num, 1);
+    data = [data_in; padding];
+end
+
+
+
+
+% ref. https://ccrma.stanford.edu/~jos/fp/Creating_Minimum_Phase_Filters.html
+function [sm] = mps(s) 
+   % [sm] = mps(s) 
+   % create minimum-phase spectrum sm from complex spectrum s 
+   sm = exp( fft( fold( ifft( log( clipdb(s,-100) )))));
+end
+
+
+% ref. https://ccrma.stanford.edu/~jos/fp/Creating_Minimum_Phase_Filters.html
+function [clipped] = clipdb(s,cutoff)
+    % [clipped] = clipdb(s,cutoff)
+    % Clip magnitude of s at its maximum + cutoff in dB.
+    % Example: clip(s,-100) makes sure the minimum magnitude
+    % of s is not more than 100dB below its maximum magnitude.
+    % If s is zero, nothing is done.
+
+    clipped = s;
+    as = abs(s);
+    mas = max(as(:));
+    if mas==0, return; end
+    if cutoff >= 0, return; end
+    thresh = mas*10^(cutoff/20); % db to linear
+    toosmall = find(as < thresh);
+    clipped = s;
+    clipped(toosmall) = thresh;
+end
+
+% ref. https://ccrma.stanford.edu/~jos/fp/Creating_Minimum_Phase_Filters.html
+function [rw] = fold(r) 
+% [rw] = fold(r) 
+% Fold left wing of vector in "FFT buffer format" 
+% onto right wing 
+% J.O. Smith, 1982-2002
+  
+   [m,n] = size(r);
+   if m*n ~= m+n-1
+     error('fold.m: input must be a vector'); 
+   end
+   flipped = 0;
+   if (m > n)
+     n = m;
+     r = r.';
+     flipped = 1;
+   end
+   if n < 3, rw = r; return; 
+   elseif mod(n,2)==1, 
+       nt = (n+1)/2; 
+       rw = [ r(1), r(2:nt) + conj(r(n:-1:nt+1)), ...
+             0*ones(1,n-nt) ]; 
+   else 
+       nt = n/2; 
+       rf = [r(2:nt),0]; 
+       rf = rf + conj(r(n:-1:nt+1)); 
+       rw = [ r(1) , rf , 0*ones(1,n-nt-1) ]; 
+   end; 
+
+   if flipped
+     rw = rw.';
+   end
+end
+
+% ref . https://ccrma.stanford.edu/~jos/fp/Matlab_diary_tmps_d.html
+function test_mps()
+    spec = [1 1 1 0 0 0 1 1]'; % Lowpass cutting off at fs*3/8
+    format short;
+    mps(spec)
+    abs(mps(spec))
+    ifft(spec)
+    ifft(mps(spec))
 end
