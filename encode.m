@@ -81,7 +81,7 @@ function [env_fit, color_b, color_a] = analyze_treble(data_in, sample_rate, bloc
     
     % Extract treble color
     num_freqs = 2^18;
-    color_h = fft(treble_norm, num_freqs);
+    color_h = fft(treble, num_freqs);
     color_h = mps(color_h);
     color_h = color_h(1:num_freqs/2+1);
     color_w = (0:(num_freqs/2)) * (2*pi)/num_freqs;
