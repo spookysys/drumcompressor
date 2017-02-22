@@ -15,7 +15,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     mkdir(checkdir);
     [data_in, sample_rate] = load_input(infile, block_size);
 
-    audiowrite([checkdir 'orig.wav'], data_in, sample_rate);
+    save_output([checkdir 'orig.wav'], data_in, sample_rate);
 
     [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
     [bass_env_fit, bass_sig_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
@@ -35,8 +35,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / len) '\r\n']);
     fclose(fid);
 
-    treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a);
-    audiowrite([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
+    treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
+    save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
     bass_env_fit_x = (0:length(bass_sig_norm)-1)';
     bass_env_fit_values = feval(bass_env_fit, bass_env_fit_x);
@@ -44,7 +44,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (length(bass_recon)>0)
-        audiowrite([checkdir 'bass_recon.wav'], resample(bass_recon, block_size, 1), sample_rate);
+        save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1), sample_rate);
+        save_output([checkdir 'bass_recon.wav'], resample(bass_recon, block_size, 1), sample_rate);
     end
 
     % mix and output
@@ -52,17 +53,30 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
     treble_recon_padded = pad_to(treble_recon, len, 0);
     mix = bass_recon_padded + treble_recon_padded;
-    audiowrite(outfile, mix, sample_rate);
-    audiowrite([checkdir 'result.wav'], mix, sample_rate);
+    save_output(outfile, mix, sample_rate);
+    save_output([checkdir 'result.wav'], mix, sample_rate);
 end
 
+
+function data_out = clip_sound(data_in, bits)
+    max_val = 2^(bits-1)-1;
+    min_val = -2^(bits-1);
+    data_out = max(min(data_in, max_val), min_val);
+end
 
 % Load wav-file
 function [data, sample_rate] = load_input(filename, block_size)
 	[data, sample_rate] = audioread(filename);
     data = sum(data, 2); % combine channels
     data = pad(data, block_size); % pad
-    data = normalize(data); % normalize
+    scaler = max(abs(data)); % normalize
+    data = data / scaler; % normalize
+end
+
+
+% Save wav-file
+function save_output(filename, data, sample_rate)
+    audiowrite(filename, data, sample_rate);
 end
 
 % Prepare data for compression
@@ -73,7 +87,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     % Separate treble
 	[sep_b, sep_a] = butter(6, separation_freq / nyquist, 'high');
 	treble = filter(sep_b, sep_a, data_in);
-    audiowrite([checkdir 'treble.wav'], treble, sample_rate);
+    save_output([checkdir 'treble.wav'], treble, sample_rate);
 
 	% Find volume envelopes
 	env = abs(hilbert(treble));
@@ -100,8 +114,8 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     % Normalize treble signal
     treble_norm = treble ./ env_smooth;
     if (length(treble_norm)>0)
-        audiowrite([checkdir 'treble_cut.wav'], treble, sample_rate);
-        audiowrite([checkdir 'treble_norm.wav'], treble_norm, sample_rate);
+        save_output([checkdir 'treble_cut.wav'], treble, sample_rate);
+        save_output([checkdir 'treble_norm.wav'], treble_norm, sample_rate);
     end
     
     % Extract treble color
@@ -125,7 +139,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
 function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
 	% extract and resample bass
     bass = resample(data_in, 1, block_size);
-    audiowrite([checkdir 'bass.wav'], resample(bass, block_size, 1), sample_rate);
+    save_output([checkdir 'bass.wav'], resample(bass, block_size, 1), sample_rate);
     
     % calculate bass volume envelope
     env = abs(hilbert(bass));
@@ -154,8 +168,8 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
     bass_norm = bass ./ env_smooth;
 
     if (length(bass_norm)>0)
-        audiowrite([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
-        audiowrite([checkdir 'bass_norm.wav'], resample(bass_norm, block_size, 1), sample_rate);
+        save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
+        save_output([checkdir 'bass_norm.wav'], resample(bass_norm, block_size, 1), sample_rate);
     end
 end
 
@@ -183,19 +197,15 @@ function data_out = decompress_adpcm(data_in, palette)
 end
 
 
-function data_out = reconstruct_treble(num_samples, env_fit, color_b, color_a)
+function data_out = reconstruct_treble(num_samples, env_fit, color_b, color_a, checkdir, sample_rate)
     white = rand(num_samples, 1) * 2 - 1;
     colored = filter(color_b, color_a, white);
+    save_output([checkdir 'treble_norm_recon.wav'], colored, sample_rate);
     env_fit_x = (0:num_samples-1)';
     env_values = feval(env_fit, env_fit_x);
     data_out = colored .* env_values;
 end
 
-
-function [data_out, scaler] = normalize(data_in) 
-    scaler = max(abs(data_in));
-    data_out = data_in / scaler;
-end
 
 function data = pad(data_in, block_size)
     num = ceil(length(data_in) / block_size) * block_size - length(data_in);
