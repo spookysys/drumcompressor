@@ -10,24 +10,25 @@ end
 
 
 function main(infile, outfile, checkdir, block_size, adpcm_bits)
+    samples_per_byte = 8 / adpcm_bits;
+    
     mkdir(checkdir);
     [data_in, sample_rate] = load_input(infile, block_size);
 
     audiowrite([checkdir 'orig.wav'], data_in, sample_rate);
 
     [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
-    [bass_env_fit, bass_sig_norm] = analyze_bass(data_in, sample_rate, block_size, checkdir);
+    [bass_env_fit, bass_sig_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
     len = max(length(bass_sig_norm)*block_size, ceil(treble_cut_point/block_size)*block_size);
     
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
     size1 = 4 + 4 + 3 + 2 + 2 + 4; % bass_fit, treble_fit, treble_b, treble_a, bass_length, palette
-    size2 = ceil(length(bass_sig_norm) * 2./8); % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
+    size2 = length(bass_sig_norm) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
     fprintf(fid, [ 'Original: ' num2str(length(data_in)) '\r\n']);
     fprintf(fid, [ 'Cropped: ' num2str(len) '\r\n']);
-    fprintf(fid, [ 'Blocks: ' num2str(len/block_size) '\r\n']);
-    fprintf(fid, [ 'Bass-Blocks: ' num2str(length(bass_sig_norm)) '\r\n']);
+    fprintf(fid, [ 'Bass-Crop: ' num2str(length(bass_sig_norm)*block_size) '\r\n']);
     fprintf(fid, [ 'Final Size: ' num2str(size1) ' + ' num2str(size2) ' = ' num2str(size) '\r\n']);
     fprintf(fid, [ 'Kbps: ' num2str(size*8 / (len/sample_rate) / 1024) '\r\n']);
     fprintf(fid, [ 'Compression Ratio: ' num2str(len/size) '\r\n']);
@@ -48,8 +49,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     % mix and output
     bass_recon_upsampled = resample(bass_recon, block_size, 1);
-    bass_recon_padded = pad_to(bass_recon_upsampled, len);
-    treble_recon_padded = pad_to(treble_recon, len);
+    bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
+    treble_recon_padded = pad_to(treble_recon, len, 0);
     mix = bass_recon_padded + treble_recon_padded;
     audiowrite(outfile, mix, sample_rate);
     audiowrite([checkdir 'result.wav'], mix, sample_rate);
@@ -121,7 +122,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
 
 
 % Prepare data for compression
-function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, checkdir)
+function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
 	% extract and resample bass
     bass = resample(data_in, 1, block_size);
     audiowrite([checkdir 'bass.wav'], resample(bass, block_size, 1), sample_rate);
@@ -145,8 +146,9 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, c
             cut_point = i;
         end
     end
-    bass = bass(1:cut_point);
-    env_smooth = env_smooth(1:cut_point);
+    cut_point = ceil(cut_point/samples_per_byte) * samples_per_byte;
+    bass = pad_to(bass, cut_point, 0);
+    env_smooth = pad_to(env_smooth, cut_point, 'clamp');
     
     % normalize bass to fit curve
     bass_norm = bass ./ env_smooth;
@@ -201,9 +203,12 @@ function data = pad(data_in, block_size)
     data = [data_in; padding];
 end
 
-function data = pad_to(data_in, len)
+function data = pad_to(data_in, len, val)
     if (len > length(data_in))
-        padding = zeros(len - length(data_in), 1);
+        if (val == 'clamp') 
+            val = data_in(end);
+        end
+        padding = ones(len - length(data_in), 1) .* val;
         data = [data_in; padding];
     else
         data = data_in(1:len);
