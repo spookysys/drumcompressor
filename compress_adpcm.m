@@ -1,39 +1,102 @@
 
-function [data_out, palette_out, volume_adj_out] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
+
+
+
+function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
     if (length(data_in)==0)
-        palette_out = [];
-        data_out = [];
+        indices = [];
+        palette = [];
+        volume_adj = 1;
     else
-        data_in = data_in .* 2^(bitdepth-1);
-        disp(['Max value in bass compression: ' num2str(max(abs(data_in)))]);
-        [palette_out, ~] = find_palette(data_in, weights, bits_per_sample, bitdepth);
-        data_out = compress_with_palette(data_in, palette_out);
-        volume_adj_out = 1;
+        scale = 2^(bitdepth-1);
+        minval = -scale;
+        maxval =  scale-1;
+        data = data_in .* scale;
+        clear data_in;
+        
+        % first estimate using approximate algorithm
+        [error, palette] = first_estimate(data, weights, bits_per_sample);
+        
+        % palette must fit in one byte per value, so we must rescale
+        volume_adj = minval / min(palette);
+        palette = palette .* volume_adj;
+        assert(max(palette) <= maxval);
+        data = data .* volume_adj;
+        
+        % output the thing
+        indices = compress_with_palette(data, palette);
     end
 end
 
 
-% Run a simplified compression with given palette and return total error
-function total_error = get_compression_error(data_in, palette, weights)
-    total_error = 0;
+% Simulated annealing with histogram-based error estimation
+function [error, palette] = first_estimate(data, weights, bits_per_sample)
+    [hist_deltas, hist_weights] = gen_hist_map(data, weights); % generate histogram for quick palette check        
+    maxpal = max(hist_deltas);
+    minpal = min(hist_deltas);
+    disp('first_estimate');
+    disp(['max: ' num2str(maxpal) ' min: ' num2str(minpal)]);
+    error = -1;
+    palette = ones(1, 2^bits_per_sample) * ((maxpal+minpal)/2);
+    for temperature = linspace((maxpal-minpal)/2, 0, 10000000 / length(data))
+        test_palette = palette + randn(1, length(palette)) * temperature;
+        test_error = quick_palette_test(hist_deltas, hist_weights, test_palette);
+        if (error==-1 || test_error <= error)
+            test_palette = min(maxpal, max(minpal, test_palette));
+            test_palette = sort(test_palette);
+            error = test_error;
+            palette = test_palette;
+            disp(['Temperature: ', num2str(temperature), ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
+        end
+    end
+    disp('end');
+end
+
+
+
+% prepare for quick_palette_test
+function [hist_deltas, hist_weights] = gen_hist_map(data_in, weights)
+    hist_map = containers.Map('KeyType','int32', 'ValueType','double');
     recon_1 = 0;
     recon_2 = 0;
     for i = 1:length(data_in)
-        val = round(data_in(i));
+        val = data_in(i);
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
-        if (recon_1 >= 0) % todo: change to recon_1 >= 0
-            palette_adj = -palette;
-        else
-            palette_adj = palette;
+        delta = val - prediction;
+        if (recon_1 < 0)
+            delta = -delta;
         end
-        recon_opts = prediction + palette_adj;
-        error_opts = abs(recon_opts - val);
-        [error, index] = min(error_opts);
-        error = error * weights(i);
-        total_error = total_error + error;
+        key = round(delta);
+        inc = weights(i);
+        if isKey(hist_map, key)
+            hist_map(key) = hist_map(key) + inc;
+        else
+            hist_map(key) = inc;
+        end
+        if (recon_1 < 0)
+            estimate = prediction - delta;
+        else
+            estimate = prediction + delta;
+        end
+        assert(abs(estimate-val)<0.1);
         recon_2 = recon_1;
-        recon_1 = recon_opts(index);
+        recon_1 = val;
+    end
+    hist_deltas = double(cell2mat(keys(hist_map)));
+    hist_weights = cell2mat(values(hist_map));
+end
+
+
+% todo: optimize
+function [total_error] = quick_palette_test(hist_deltas, hist_weights, palette)
+    total_error = 0;
+    for i = 1:length(hist_deltas)
+        delta = hist_deltas(i);
+        weight = hist_weights(i);
+        error_opts = abs(palette - double(delta));
+        error = min(error_opts) * weight;
+        total_error = total_error + error;
     end
 end
 
@@ -46,7 +109,7 @@ function data_out = compress_with_palette(data_in, palette)
         val = round(data_in(i));
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
-        if (recon_1 >= 0)
+        if (recon_1 < 0)
             palette_adj = -palette;
         else
             palette_adj = palette;
@@ -59,38 +122,5 @@ function data_out = compress_with_palette(data_in, palette)
         recon_1 = recon_opts(index);
     end
 end
-
-
-function [rounded_palette, error] = find_palette(data_in, weights, bits_per_sample, bitdepth)
-    palette = zeros(1, 2^bits_per_sample);
-    error = get_compression_error(data_in, palette, weights);
-    disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-
-    maxval = 2^(bitdepth-1)-1;
-    minval = -2^(bitdepth-1);
-    
-    t = linspace(2^(bitdepth-1), -2^(bitdepth-2), 1000000 / length(data_in));
-    rounded_palette = round(palette);
-    for temperature = t
-        temperature_clamped = max(1, temperature);
-        test_palette = palette;
-        rounded_test_palette = rounded_palette;
-        while isequal(rounded_palette, rounded_test_palette)
-            test_palette = test_palette + randn(1, length(palette)) * temperature_clamped;
-%            test_palette = max(minval, min(maxval, test_palette));
-            test_palette = sort(test_palette);
-            rounded_test_palette = round(test_palette);
-        end
-        test_error = get_compression_error(data_in, rounded_test_palette, weights);
-        if (test_error <= error)
-            error = test_error;
-            palette = test_palette;
-            rounded_palette = rounded_test_palette;
-            disp(['Temperature: ', num2str(temperature), ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-        end
-    end
-    
-end
-
 
 

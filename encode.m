@@ -40,8 +40,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
     [bass_adpcm_data, bass_adpcm_palette, volume_adj] = compress_adpcm(bass_sig_norm, adpcm_weights, adpcm_bits, 8);
-    bass_env_fit.a = bass_env_fit.a * volume_adj;
-    bass_env_fit.c = bass_env_fit.c * volume_adj;
+    bass_env_fit.a = bass_env_fit.a / volume_adj;
+    bass_env_fit.c = bass_env_fit.c / volume_adj;
     clear volume_adj;
     clear adpcm_weights;
     
@@ -103,7 +103,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     env_fit_x = (0:length(data_in)-1)';
     env_fit = fit(env_fit_x, env_smooth, 'exp2');
     
-    % find where volume drops below 1/512
+    % find where volume drops below 1/256
     cut_point = 0;
     limit = 1. / 2^8;
     for i = 1:length(treble)
@@ -192,7 +192,7 @@ function data_out = decompress_adpcm(data_in, palette, bitdepth)
         palette_val = palette(index+1);
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
-        if (recon_1 >= 0)
+        if (recon_1 < 0)
             palette_val = -palette_val;
         end
         recon = prediction + palette_val;
