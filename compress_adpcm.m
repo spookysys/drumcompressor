@@ -45,7 +45,7 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         
         % output the thing
         disp('Compressing');
-        [error, indices] = compress_with_palette(data, weights, palette, 5);
+        [error, indices] = compress_with_palette(data, weights, palette, 6);
         disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
         disp('Done');
     end
