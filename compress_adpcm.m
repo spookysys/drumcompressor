@@ -8,21 +8,29 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         palette = [];
         volume_adj = 1;
     else
-        scale = 2^(bitdepth-1); % produce a reasonable volume for histogram algorithm to work
+        % produce a reasonable volume for histogram algorithm to work
+        scale = 2^(bitdepth-1);
         minval = -scale;
         maxval =  scale-1;
-        data = data_in .* scale;
-        clear data_in;
-        
-        % First estimate using histogram algorithm
-        [error, palette] = first_estimate(data, weights, bits_per_sample);
-        
-        % Set volume_adj so both palette and output data are in signed byte range
+        data = data_in; clear data_in;
         volume_adj = [0, 0, 0, 0];
-        volume_adj(1) = (minval-.49) / min(palette); % scale most negative delta to -128
-        volume_adj(2) = (maxval+.49) / max(palette); % scale most positive delta to +127
         volume_adj(3) = (minval-.49) / min(data); % scale smallest data value to -128
         volume_adj(4) = (maxval+.49) / max(data); % scale biggest data value to +127
+        volume_adj = min(volume_adj(volume_adj > 0));
+        data = data .* volume_adj;
+        
+       
+        % Optimize palette
+        effort = 256*1000;
+        palette = [0 0 0 0];
+        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort/length(data), bits_per_sample, bitdepth);
+        
+
+        % Set volume_adj so both palette and output data are in signed byte range
+        volume_adj = [0, 0, 0];
+        volume_adj(1) = 1; % prevent volume from getting bigger
+        volume_adj(2) = (minval-.49) / min(palette); % scale most negative delta to -128
+        volume_adj(3) = (maxval+.49) / max(palette); % scale most positive delta to +127
         volume_adj = min(volume_adj(volume_adj > 0));
                         
         % Scale palette and data
@@ -31,17 +39,10 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         
         disp(['max data: ' num2str(max(data)) ' min data: ' num2str(min(data))]);
         disp(['Adjusted palette: ' num2str(palette)]);
-        
-        % Optimize palette
-        effort = 4000;
-        for temperature = linspace(100, 10, 10)
-            [error, palette] = optimize_palette(data, weights, palette, 0, temperature, effort/length(data)*100, bits_per_sample, bitdepth);
-        end
-        [error, palette] = optimize_palette(data, weights, palette, 0, 2, effort/length(data) * 4*4*4*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 1, 2, effort/length(data) * 4*4*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 2, 2, effort/length(data) * 4*4, bits_per_sample, bitdepth);
-        %[error, palette] = optimize_palette(data, weights, palette, 3, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
-        %[error, palette] = optimize_palette(data, weights, palette, 4, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
+                
+        % Optimize palette again
+        effort = 256*1000;
+        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort/length(data), bits_per_sample, bitdepth);
         
         % output the thing
         disp('Compressing');
@@ -56,7 +57,7 @@ end
 
 % run test compressions to try to optimize palette
 function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations, bits_per_sample, bitdepth)
-    disp(['Lookahead: ' num2str(lookahead) ' Temperature: ' num2str(temperature)]);
+    disp(['Lookahead: ' num2str(lookahead) ' Temperature: ' num2str(temperature) ' Iterations: ' num2str(iterations)]);
     scale = 2^(bitdepth-1); % produce a reasonable volume for histogram algorithm to work
     minpal = -scale;
     maxpal =  scale-1;
