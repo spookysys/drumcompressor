@@ -50,10 +50,12 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     if (~isempty(bass_recon))
         save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1), sample_rate);
         save_output([checkdir 'bass_recon.wav'], resample(bass_recon, block_size, 1), sample_rate);
+        bass_recon_upsampled = resample(bass_recon, block_size, 1);
+    else
+        bass_recon_upsampled = [];
     end
 
     % mix and output
-    bass_recon_upsampled = resample(bass_recon, block_size, 1);
     bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
     treble_recon_padded = pad_to(treble_recon, len, 0);
     mix = bass_recon_padded + treble_recon_padded;
