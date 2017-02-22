@@ -33,11 +33,15 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         disp(['Adjusted palette: ' num2str(palette)]);
         
         % Optimize palette
-        [error, palette] = optimize_palette(data, weights, palette, 0, 1, 16*4*4*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 1, 1, 16*4*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 2, 1, 16*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 3, 1, 16, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 4, 1, 4, bits_per_sample, bitdepth);
+        effort = 4000;
+        for temperature = linspace(100, 10, 10)
+            [error, palette] = optimize_palette(data, weights, palette, 0, temperature, effort/length(data)*100, bits_per_sample, bitdepth);
+        end
+        [error, palette] = optimize_palette(data, weights, palette, 0, 2, effort/length(data) * 4*4*4*4, bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 1, 2, effort/length(data) * 4*4*4, bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 2, 2, effort/length(data) * 4*4, bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 3, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 4, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
         
         % output the thing
         disp('Compressing');
@@ -52,12 +56,12 @@ end
 
 % run test compressions to try to optimize palette
 function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations, bits_per_sample, bitdepth)
-    disp(['Lookahead ' num2str(lookahead)]);
+    disp(['Lookahead: ' num2str(lookahead) ' Temperature: ' num2str(temperature)]);
     scale = 2^(bitdepth-1); % produce a reasonable volume for histogram algorithm to work
     minpal = -scale;
     maxpal =  scale-1;
     [error, ~] = compress_with_palette(data_in, weights, palette, lookahead);
-    disp(['Initial: Temperature: ', num2str(temperature), ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
+    disp(['Iteration 0 Error: ' num2str(error) ' Palette: ' num2str(palette)]);
     for i = 1:iterations
         diff = zeros(1, length(palette));
         while (sum(abs(diff))==0)
@@ -86,7 +90,7 @@ function [error, palette] = first_estimate(data, weights, bits_per_sample)
     palette = ones(1, 2^bits_per_sample) * ((maxpal+minpal)/2);
     error = quick_palette_test(hist_deltas, hist_weights, palette);
     disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-    for temperature = linspace((maxpal-minpal)/2, 0, 10000000 / length(data))
+    for temperature = linspace((maxpal-minpal)/2, 0, 100000000 / length(data))
         test_palette = palette + randn(1, length(palette)) * temperature;
         test_palette = min(maxpal, max(minpal, test_palette));
         test_error = quick_palette_test(hist_deltas, hist_weights, test_palette);

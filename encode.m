@@ -17,9 +17,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     save_output([checkdir 'orig.wav'], data_in, sample_rate);
 
-    [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
     [bass_env_fit, bass_sig_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
-    len = max(length(bass_sig_norm)*block_size, ceil(treble_cut_point/block_size)*block_size);
+    [treble_env_fit, treble_color_b, treble_color_a, len] = analyze_treble(data_in, length(bass_sig_norm)*block_size, sample_rate, block_size, checkdir);
     
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
@@ -85,7 +84,7 @@ function save_output(filename, data, sample_rate)
 end
 
 % Prepare data for compression
-function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir)
+function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, min_len, sample_rate, block_size, checkdir)
     nyquist = sample_rate/2.0;
 	separation_freq = nyquist/block_size/2.0;
 
@@ -113,8 +112,9 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
             cut_point = i;
         end
     end
-    treble = treble(1:cut_point);
-    env_smooth = env_smooth(1:cut_point);
+    cut_point = max(cut_point, min_len);
+    treble = pad_to(treble, cut_point, 0);
+    env_smooth = pad_to(env_smooth, cut_point, 'clamp');
     
     % Normalize treble signal
     treble_norm = treble ./ env_smooth;
