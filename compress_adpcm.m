@@ -40,8 +40,8 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         [error, palette] = optimize_palette(data, weights, palette, 0, 2, effort/length(data) * 4*4*4*4, bits_per_sample, bitdepth);
         [error, palette] = optimize_palette(data, weights, palette, 1, 2, effort/length(data) * 4*4*4, bits_per_sample, bitdepth);
         [error, palette] = optimize_palette(data, weights, palette, 2, 2, effort/length(data) * 4*4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 3, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
-        [error, palette] = optimize_palette(data, weights, palette, 4, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
+        %[error, palette] = optimize_palette(data, weights, palette, 3, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
+        %[error, palette] = optimize_palette(data, weights, palette, 4, 2, effort/length(data) * 4, bits_per_sample, bitdepth);
         
         % output the thing
         disp('Compressing');
