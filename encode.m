@@ -39,9 +39,9 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
     bass_env_fit_x = (0:length(bass_sig_norm)-1)';
-    bass_env_fit_values = feval(bass_env_fit, bass_env_fit_x);
-    [bass_norm_adpcm, bass_norm_palette] = compress_adpcm(bass_sig_norm, bass_env_fit_values, adpcm_bits);
-    bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette);
+    bass_env_fit_values = feval(bass_env_fit, bass_env_fit_x); % todo min 1
+    [bass_norm_adpcm, bass_norm_palette] = compress_adpcm(bass_sig_norm, bass_env_fit_values, adpcm_bits, 8);
+    bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette, 8);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (length(bass_recon)>0)
         save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1), sample_rate);
@@ -164,6 +164,7 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
     bass = pad_to(bass, cut_point, 0);
     env_smooth = pad_to(env_smooth, cut_point, 'clamp');
     
+    
     % normalize bass to fit curve
     bass_norm = bass ./ env_smooth;
 
@@ -177,7 +178,7 @@ end
 
 
 
-function data_out = decompress_adpcm(data_in, palette)
+function data_out = decompress_adpcm(data_in, palette, bitdepth)
     data_out = zeros(length(data_in), 1);
     recon_1 = 0;
     recon_2 = 0;
@@ -194,6 +195,7 @@ function data_out = decompress_adpcm(data_in, palette)
         recon_2 = recon_1;
         recon_1 = recon;
     end
+    data_out = data_out ./ 2^(bitdepth-1);
 end
 
 
