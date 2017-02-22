@@ -90,14 +90,10 @@ end
 
 % todo: optimize
 function [total_error] = quick_palette_test(hist_deltas, hist_weights, palette)
-    total_error = 0;
-    for i = 1:length(hist_deltas)
-        delta = hist_deltas(i);
-        weight = hist_weights(i);
-        error_opts = abs(palette - double(delta));
-        error = min(error_opts) * weight;
-        total_error = total_error + error;
-    end
+    error_matrix = abs(palette' - hist_deltas);
+    column_errors = min(error_matrix);
+    column_errors_weighted = column_errors .* hist_weights;
+    total_error = sum(column_errors_weighted);
 end
 
 % Run a simplified (for now) compression and return data
