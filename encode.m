@@ -65,6 +65,15 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     mix = bass_recon_padded + treble_recon_padded;
     save_output(outfile, mix, sample_rate);
     save_output([checkdir 'result.wav'], mix, sample_rate);
+
+    % Make long mix
+    len = len * 2;
+    treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
+    save_output([checkdir 'treble_recon_long.wav'], treble_recon, sample_rate);
+    treble_recon_padded = pad_to(treble_recon, len, 0);
+    bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
+    mix = bass_recon_padded + treble_recon_padded;
+    save_output([checkdir 'result_long.wav'], mix, sample_rate);
 end
 
 
@@ -104,9 +113,11 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, min_le
     env_smooth = smooth(env, 50);
     %clear env;
     
-    % Fit curve to volume envelope
-    env_fit_x = (0:length(data_in)-1)';
-    env_fit = fit(env_fit_x, env, 'exp2');
+    % Fit curve to volume envelope (padded to min_len)
+    if min_len > length(env)
+        env = pad_to(env, min_len, 0);
+    end
+    env_fit = fit((0:length(env)-1)', env, 'exp2');
     
     % find where volume drops below 1/256
     cut_point = 0;
