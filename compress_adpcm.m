@@ -18,12 +18,13 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         volume_adj(4) = (maxval+.49) / max(data); % scale biggest data value to +127
         volume_adj = min(volume_adj(volume_adj > 0));
         data = data .* volume_adj;
-        
+
+        % starting point
+        palette = [0 0 0 0];
        
         % Optimize palette
-        effort = 256*1000;
-        palette = [0 0 0 0];
-        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort/length(data), bits_per_sample, bitdepth);
+        effort = 300;
+        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth);
         
 
         % Set volume_adj so both palette and output data are in signed byte range
@@ -41,8 +42,8 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         disp(['Adjusted palette: ' num2str(palette)]);
                 
         % Optimize palette again
-        effort = 256*1000;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort/length(data), bits_per_sample, bitdepth);
+        effort = 300;
+        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth);
         
         % output the thing
         disp('Compressing');

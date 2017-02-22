@@ -37,7 +37,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
-    adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
+    adpcm_weights = ones(1, length(bass_sig_norm)); % max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
     [bass_adpcm_data, bass_adpcm_palette, volume_adj] = compress_adpcm(bass_sig_norm, adpcm_weights, adpcm_bits, 8);
     bass_env_fit.a = bass_env_fit.a / volume_adj;
     bass_env_fit.c = bass_env_fit.c / volume_adj;
@@ -98,11 +98,11 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, min_le
 	% Find volume envelopes
 	env = abs(hilbert(treble));
     env_smooth = smooth(env, 50);
-    clear env;
+    %clear env;
     
     % Fit curve to volume envelope
     env_fit_x = (0:length(data_in)-1)';
-    env_fit = fit(env_fit_x, env_smooth, 'exp2');
+    env_fit = fit(env_fit_x, env, 'exp2');
     
     % find where volume drops below 1/256
     cut_point = 0;
