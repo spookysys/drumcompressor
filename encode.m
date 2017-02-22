@@ -187,7 +187,7 @@ function data_out = decompress_adpcm(data_in, palette, bitdepth)
         palette_val = palette(index+1);
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
-        if (prediction >= 0)
+        if (recon_1 >= 0)
             palette_val = -palette_val;
         end
         recon = prediction + palette_val;

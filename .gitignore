@@ -2,3 +2,5 @@
 *.WAV
 *.asv
 packs/
+out/*
+out_check/*
