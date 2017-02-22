@@ -13,11 +13,11 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         minval = -scale;
         maxval =  scale-1;
         data = data_in; clear data_in;
-        volume_adj = [0, 0, 0, 0];
-        volume_adj(3) = (minval-.49) / min(data); % scale smallest data value to -128
-        volume_adj(4) = (maxval+.49) / max(data); % scale biggest data value to +127
-        volume_adj = min(volume_adj(volume_adj > 0));
-        data = data .* volume_adj;
+        
+        % signal should be in signed byte range
+        signal_adj = [minval-.49 maxval+.49] ./ [min(data) max(data)]; % scale smallest data value to -128 and biggest data value to +127
+        signal_adj = min(signal_adj(signal_adj > 0));
+        data = data .* signal_adj;
 
         % starting point
         palette = [0 0 0 0];
@@ -27,16 +27,13 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth, 3);
         
 
-        % Set volume_adj so both palette and output data are in signed byte range
-        volume_adj = [0, 0, 0];
-        volume_adj(1) = 1; % prevent volume from getting bigger
-        volume_adj(2) = (minval-.49) / min(palette); % scale most negative delta to -128
-        volume_adj(3) = (maxval+.49) / max(palette); % scale most positive delta to +127
-        volume_adj = min(volume_adj(volume_adj > 0));
-                        
-        % Scale palette and data
-        palette = round(palette .* volume_adj);
-        data = data .* volume_adj;
+        % both palette and signal should be in signed byte range
+        palette_adj = [minval-.49 maxval+.49] ./ [min(palette) max(palette)]; % scale most negative delta to -128 and most positive delta to +127
+        palette_adj = min(palette_adj(palette_adj > 0));
+        palette_adj = min(1, palette_adj); % never increase volume as this would bring signal out of byte range
+        
+        palette = round(palette .* palette_adj);
+        data = data .* palette_adj;
         
         disp(['max data: ' num2str(max(data)) ' min data: ' num2str(min(data))]);
         disp(['Adjusted palette: ' num2str(palette)]);
@@ -50,6 +47,9 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
         [error, indices] = compress_with_palette(data, weights, palette, 6);
         disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
         disp('Done');
+        
+        % output result of volume adjustments made
+        volume_adj = signal_adj * palette_adj;
     end
 end
 

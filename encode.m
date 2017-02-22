@@ -223,7 +223,7 @@ function data_out = decompress_adpcm(data_in, palette, bitdepth)
         recon_2 = recon_1;
         recon_1 = recon;
     end
-    data_out = data_out ./ 2^(bitdepth-1);
+%    data_out = data_out ./ 2^(bitdepth-1);
 end
 
 
