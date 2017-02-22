@@ -37,7 +37,11 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
-    adpcm_weights = ones(1, length(bass_sig_norm)); % max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
+    if true
+        adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
+    else
+        adpcm_weights = ones(1, length(bass_sig_norm));
+    end
     [bass_adpcm_data, bass_adpcm_palette, volume_adj] = compress_adpcm(bass_sig_norm, adpcm_weights, adpcm_bits, 8);
     bass_env_fit.a = bass_env_fit.a / volume_adj;
     bass_env_fit.c = bass_env_fit.c / volume_adj;
@@ -153,8 +157,7 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
     env_smooth = smooth(env, 50);
     
     % fit volume envelope
-    env_fit_x = (0:length(bass)-1)';
-    env_fit = fit(env_fit_x, env, 'exp2');
+    env_fit = fit((0:length(bass)-1)', env, 'exp2');
     clear env;
     
     % cut at the point where volume drops below 1/256
@@ -169,12 +172,19 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
     end
     cut_point = ceil(cut_point/samples_per_byte) * samples_per_byte;
     bass = pad_to(bass, cut_point, 0);
-    env_smooth = pad_to(env_smooth, cut_point, 'clamp');
     
     
     % normalize bass to fit curve
-    bass_norm = bass ./ env_smooth;
-
+    % Two options here - env_fit should give better dynamics in theory but
+    % is less predictable. But I just think it sounds worse.
+    if true
+        env_fit_values = feval(env_fit, (0:length(bass)-1)');
+        bass_norm = bass ./ max(8./2^8, env_fit_values);
+    else
+        env_smooth = pad_to(env_smooth, cut_point, 'clamp');
+        bass_norm = bass ./ env_smooth;
+    end
+    
     if (length(bass_norm)>0)
         save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
         save_output([checkdir 'bass_norm.wav'], resample(bass_norm, block_size, 1), sample_rate);

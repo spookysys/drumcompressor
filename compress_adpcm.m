@@ -24,7 +24,7 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
        
         % Optimize palette
         effort = 300;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth, 3);
         
 
         % Set volume_adj so both palette and output data are in signed byte range
@@ -43,7 +43,7 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
                 
         % Optimize palette again
         effort = 300;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth);
+        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort * min(1, 1000/length(data)), bits_per_sample, bitdepth, 1);
         
         % output the thing
         disp('Compressing');
@@ -57,11 +57,11 @@ end
 
 
 % run test compressions to try to optimize palette
-function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations, bits_per_sample, bitdepth)
+function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations, bits_per_sample, bitdepth, clamping)
     disp(['Lookahead: ' num2str(lookahead) ' Temperature: ' num2str(temperature) ' Iterations: ' num2str(iterations)]);
     scale = 2^(bitdepth-1); % produce a reasonable volume for histogram algorithm to work
-    minpal = -scale;
-    maxpal =  scale-1;
+    minpal = (-scale) * clamping;
+    maxpal = (scale-1) * clamping;
     [error, ~] = compress_with_palette(data_in, weights, palette, lookahead);
     disp(['Iteration 0 Error: ' num2str(error) ' Palette: ' num2str(palette)]);
     for i = 1:iterations
