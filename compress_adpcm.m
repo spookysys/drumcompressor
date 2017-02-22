@@ -1,5 +1,5 @@
 
-function [data_out, palette_out] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
+function [data_out, palette_out, volume_adj_out] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
     if (length(data_in)==0)
         palette_out = [];
         data_out = [];
@@ -8,6 +8,7 @@ function [data_out, palette_out] = compress_adpcm(data_in, weights, bits_per_sam
         disp(['Max value in bass compression: ' num2str(max(abs(data_in)))]);
         [palette_out, ~] = find_palette(data_in, weights, bits_per_sample, bitdepth);
         data_out = compress_with_palette(data_in, palette_out);
+        volume_adj_out = 1;
     end
 end
 
@@ -76,7 +77,7 @@ function [rounded_palette, error] = find_palette(data_in, weights, bits_per_samp
         rounded_test_palette = rounded_palette;
         while isequal(rounded_palette, rounded_test_palette)
             test_palette = test_palette + randn(1, length(palette)) * temperature_clamped;
-            test_palette = max(minval, min(maxval, test_palette));
+%            test_palette = max(minval, min(maxval, test_palette));
             test_palette = sort(test_palette);
             rounded_test_palette = round(test_palette);
         end

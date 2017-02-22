@@ -38,10 +38,15 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
-    bass_env_fit_x = (0:length(bass_sig_norm)-1)';
-    bass_env_fit_values = feval(bass_env_fit, bass_env_fit_x); % todo min 1
-    [bass_norm_adpcm, bass_norm_palette] = compress_adpcm(bass_sig_norm, bass_env_fit_values, adpcm_bits, 8);
-    bass_norm_recon = decompress_adpcm(bass_norm_adpcm, bass_norm_palette, 8);
+    adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
+    [bass_adpcm_data, bass_adpcm_palette, volume_adj] = compress_adpcm(bass_sig_norm, adpcm_weights, adpcm_bits, 8);
+    bass_env_fit.a = bass_env_fit.a * volume_adj;
+    bass_env_fit.c = bass_env_fit.c * volume_adj;
+    clear volume_adj;
+    clear adpcm_weights;
+    
+    bass_env_fit_values = feval(bass_env_fit, (0:length(bass_sig_norm)-1)');
+    bass_norm_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette, 8);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (length(bass_recon)>0)
         save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1), sample_rate);
