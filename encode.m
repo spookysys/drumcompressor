@@ -34,9 +34,6 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / orig_len) '\r\n']);
     fclose(fid);
 
-    treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
-    save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
-
     if false
         adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
     else
@@ -58,20 +55,23 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     else
         bass_recon_upsampled = [];
     end
+    clear bass_env_fit_values;
+    clear bass_norm_recon;
 
     % mix and output
-    bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
-    mix = bass_recon_padded + treble_recon;
-    save_output(outfile, mix, sample_rate);
-    save_output([checkdir 'result.wav'], mix, sample_rate);
+    treble_recon_short = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
+    mix_short = pad_to(bass_recon_upsampled, len, 0) + treble_recon_short;
+    save_output([checkdir 'treble_recon_short.wav'], treble_recon_short, sample_rate);
+    save_output([checkdir 'result_short.wav'], mix_short, sample_rate);
 
     % Make long mix
-    len = len * 2;
-    treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
-    save_output([checkdir 'treble_recon_long.wav'], treble_recon, sample_rate);
-    bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
-    mix = bass_recon_padded + treble_recon;
-    save_output([checkdir 'result_long.wav'], mix, sample_rate);
+    treble_recon_long = reconstruct_treble(len*2, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
+    mix_long = pad_to(bass_recon_upsampled, len*2, 0) + treble_recon_long;
+    save_output([checkdir 'treble_recon_long.wav'], treble_recon_long, sample_rate);
+    save_output([checkdir 'result_long.wav'], mix_long, sample_rate);
+
+    % This is the final mix
+    save_output(outfile, mix_long, sample_rate);
 end
 
 
