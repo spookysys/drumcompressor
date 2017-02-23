@@ -13,7 +13,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     samples_per_byte = 8 / adpcm_bits;
     
     mkdir(checkdir);
-    [data_in, sample_rate] = load_input(infile, block_size);
+    [data_in, sample_rate, orig_len] = load_input(infile, block_size);
 
     save_output([checkdir 'orig.wav'], data_in, sample_rate);
 
@@ -25,19 +25,19 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     size1 = 4 + 4 + 3 + 2 + 2 + 4; % bass_fit, treble_fit, treble_b, treble_a, bass_length, palette
     size2 = length(bass_sig_norm) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
-    fprintf(fid, [ 'Original: ' num2str(length(data_in)) '\r\n']);
+    fprintf(fid, [ 'Original: ' num2str(orig_len) '\r\n']);
     fprintf(fid, [ 'Cropped: ' num2str(len) '\r\n']);
     fprintf(fid, [ 'Bass-Crop: ' num2str(length(bass_sig_norm)*block_size) '\r\n']);
     fprintf(fid, [ 'Final Size: ' num2str(size1) ' + ' num2str(size2) ' = ' num2str(size) '\r\n']);
-    fprintf(fid, [ 'Kbps: ' num2str(size*8 / (len/sample_rate) / 1024) '\r\n']);
-    fprintf(fid, [ 'Compression Ratio: ' num2str(len/size) '\r\n']);
-    fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / len) '\r\n']);
+    fprintf(fid, [ 'Kbps: ' num2str(size*8 / (orig_len/sample_rate) / 1024) '\r\n']);
+    fprintf(fid, [ 'Compression Ratio: ' num2str(orig_len/size) '\r\n']);
+    fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / orig_len) '\r\n']);
     fclose(fid);
 
     treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     save_output([checkdir 'treble_recon.wav'], treble_recon, sample_rate);
 
-    if true
+    if false
         adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_sig_norm)-1)'));
     else
         adpcm_weights = ones(1, length(bass_sig_norm));
@@ -84,10 +84,12 @@ function data_out = clip_sound(data_in, bits)
 end
 
 % Load wav-file
-function [data, sample_rate] = load_input(filename, block_size)
+function [data, sample_rate, orig_len] = load_input(filename, block_size)
 	[data, sample_rate] = audioread(filename);
+    orig_len = length(data);
     data = sum(data, 2); % combine channels
-    data = pad(data, block_size); % pad
+    data = pad_to(data, orig_len*2+1, 0); % double length inserting silence (to ensure fitted envelopes die out)
+    data = pad(data, block_size); % pad to block_size
     scaler = max(abs(data)); % normalize
     data = data / scaler; % normalize
 end
