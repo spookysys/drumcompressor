@@ -2,7 +2,7 @@ block_size = 8;
 adpcm_bits = 2;
 
 % This has a problem with bass-crop
-files = dir('in/JK_*.wav');
+files = dir('in/*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
@@ -25,7 +25,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 %    save_output([checkdir 'orig_long.wav'], data_long, sample_rate);
 %    long_len = length(data_long);
 
-    [bass_env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
+    [bass_env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
     [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
     short_len = max(ceil(treble_cut_point/block_size)*block_size, length(bass_norm)*block_size);
     long_len = orig_len + min(ceil(orig_len/2), ceil(sample_rate/2));
@@ -47,7 +47,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     fclose(fid);
 
     % Compress bass
-    if false
+    if true
         adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_norm)-1)'));
     else
         adpcm_weights = ones(1, length(bass_norm));
@@ -63,15 +63,25 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     bass_norm_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette, 8);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (~isempty(bass_recon))
-        save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1) * 0.25, sample_rate);
+        save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1) * 0.25 / 2^7, sample_rate);
         save_output([checkdir 'bass_recon.wav'], resample(bass_recon, block_size, 1), sample_rate);
         bass_recon_upsampled = resample(bass_recon, block_size, 1);
     else
         bass_recon_upsampled = [];
     end
     clear bass_env_fit_values;
-    clear bass_norm_recon;
+    %clear bass_norm_recon;
 
+%    figure();
+%    subplot(4,1,1)
+%    plot(bass);
+%    subplot(4,1,2)
+%    plot(bass_norm);
+%    subplot(4,1,3)
+%    plot(bass_norm_recon);
+%    subplot(4,1,4)
+%    plot(bass_recon);
+    
     % Make short mix
     treble_recon_short = reconstruct_treble(short_len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     mix_short = pad_to(bass_recon_upsampled, short_len, 0) + treble_recon_short;
@@ -172,7 +182,7 @@ function [env] = get_env(data_in)
 end
 
 % Prepare data for compression
-function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
+function [env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
     smooth_window = 50;
     
 	% extract and resample bass
@@ -209,13 +219,13 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
     bass = pad(bass, samples_per_byte);
         
     % normalize bass to fit curve
-    if true
-        % better dynamics (in theory)
+    if false
+        % more accurate dynamics (in theory)
         env_fit_values = feval(env_fit, (0:length(bass)-1)');
         bass_norm = bass ./ max(8./2^8, env_fit_values);
     else
-        % better range (in theory)
-        env_smooth = pad_to(env_smooth, cut_point, 'clamp');
+        % better range and smoother dynamics (in theory)
+        env_smooth = pad_to(env_smooth, length(bass), 'clamp');
         bass_norm = bass ./ env_smooth;
     end
     
