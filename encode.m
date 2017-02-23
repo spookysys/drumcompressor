@@ -61,8 +61,7 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     % mix and output
     bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
-    treble_recon_padded = pad_to(treble_recon, len, 0);
-    mix = bass_recon_padded + treble_recon_padded;
+    mix = bass_recon_padded + treble_recon;
     save_output(outfile, mix, sample_rate);
     save_output([checkdir 'result.wav'], mix, sample_rate);
 
@@ -70,9 +69,8 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     len = len * 2;
     treble_recon = reconstruct_treble(len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
     save_output([checkdir 'treble_recon_long.wav'], treble_recon, sample_rate);
-    treble_recon_padded = pad_to(treble_recon, len, 0);
     bass_recon_padded = pad_to(bass_recon_upsampled, len, 0);
-    mix = bass_recon_padded + treble_recon_padded;
+    mix = bass_recon_padded + treble_recon;
     save_output([checkdir 'result_long.wav'], mix, sample_rate);
 end
 
@@ -183,9 +181,8 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
             cut_point = i;
         end
     end
-    cut_point = ceil(cut_point/samples_per_byte) * samples_per_byte;
-    bass = pad_to(bass, cut_point, 0);
-    
+    bass = bass(1:cut_point);
+    bass = pad(bass, samples_per_byte);
     
     % normalize bass to fit curve
     % Two options here - env_fit should give better dynamics in theory but
@@ -198,7 +195,13 @@ function [env_fit, bass_norm] = analyze_bass(data_in, sample_rate, block_size, s
         bass_norm = bass ./ env_smooth;
     end
     
-    if (length(bass_norm)>0)
+    % clear samples after cut_point
+    for i = (cut_point+1):length(bass_norm)
+        bass_norm(i) = 0;
+    end
+    
+    % Output debug stuff
+    if (~isempty(bass_norm))
         save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
         save_output([checkdir 'bass_norm.wav'], resample(bass_norm, block_size, 1), sample_rate);
     end
