@@ -12,21 +12,14 @@ end
 
 function main(infile, outfile, checkdir, block_size, adpcm_bits)
     samples_per_byte = 8 / adpcm_bits;
-    
-    mkdir(checkdir);
+    [~,~,~] = mkdir(checkdir);
     [data_in, sample_rate] = load_input(infile, block_size);
     save_output([checkdir 'orig.wav'], data_in, sample_rate);
 
-    % add some silence at the end
-    orig_len = length(data_in);
-    
-%    data_long = pad_to(data, orig_len + max(orig_len, sample_rate/4), 0); % insert silence at end
-%    data_long = pad(data_long, block_size*samples_per_byte); % pad to block_size*samples_per_block
-%    save_output([checkdir 'orig_long.wav'], data_long, sample_rate);
-%    long_len = length(data_long);
-
     [bass_env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
     [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
+
+    orig_len = length(data_in);
     short_len = max(ceil(treble_cut_point/block_size)*block_size, length(bass_norm)*block_size);
     long_len = orig_len + min(ceil(orig_len/2), ceil(sample_rate/2));
         
@@ -96,6 +89,9 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
 
     % This is the final mix
     save_output(outfile, mix_long, sample_rate);
+    
+    % Export to C
+    export(infile, bass_adpcm_data, bass_adpcm_palette, bass_env_fit, treble_color_b, treble_color_a, treble_env_fit);
 end
 
 

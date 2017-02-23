@@ -24,7 +24,7 @@ function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_
        
         % Optimize palette
         effort = 300;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 2000/length(data)), bits_per_sample, bitdepth, 3);
+        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 2000/length(data)), bits_per_sample, bitdepth, 1.5);
         
 
         % both palette and signal should be in signed byte range
