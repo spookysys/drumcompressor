@@ -56,7 +56,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     
     % Reconstruct bass
     bass_env_fit_values = feval(bass_env_fit, (0:length(bass_norm)-1)');
-    bass_norm_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette, 8);
+    bass_norm_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (~isempty(bass_recon))
         save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1) * 0.25 / 2^7, sample_rate);
@@ -258,7 +258,7 @@ end
 
 
 
-function data_out = decompress_adpcm(data_in, palette, bitdepth)
+function data_out = decompress_adpcm(data_in, palette)
     data_out = zeros(length(data_in), 1);
     recon_1 = 0;
     recon_2 = 0;
@@ -268,14 +268,14 @@ function data_out = decompress_adpcm(data_in, palette, bitdepth)
         recon_slope = recon_1 - recon_2;
         prediction = recon_1 + recon_slope;
         if (recon_1 < 0)
-            palette_val = -palette_val;
+            recon = prediction - palette_val;
+        else
+            recon = prediction + palette_val;
         end
-        recon = prediction + palette_val;
         data_out(i) = recon;
         recon_2 = recon_1;
         recon_1 = recon;
     end
-%    data_out = data_out ./ 2^(bitdepth-1);
 end
 
 

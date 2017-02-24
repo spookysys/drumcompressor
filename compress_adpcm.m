@@ -9,9 +9,10 @@ function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, 
     else
         % Determine optimal palette
         effort = 300;
+        iterations = ceil(effort * min(1, 2000/length(data_in)));
         palette = [0 0 0 0];
-        [error, palette] = optimize_palette(data_in, weights, palette, 2, 100, effort * min(1, 2000/length(data_in)), bits_per_sample, bitdepth, 1);
-        [error, palette] = optimize_palette(data_in, weights, palette, 2, 3, effort * min(1, 2000/length(data_in)), bits_per_sample, bitdepth, 1);
+        [error, palette] = optimize_palette(data_in, weights, palette, 2, 100, iterations);
+        [error, palette] = optimize_palette(data_in, weights, palette, 2, 3, iterations);
         
         % output the thing
         disp('Compressing');
@@ -25,101 +26,24 @@ end
 
 
 % run test compressions to try to optimize palette
-function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations, bits_per_sample, bitdepth, clamping)
+function [error, palette] = optimize_palette(data_in, weights, palette, lookahead, temperature, iterations)
     disp(['Lookahead: ' num2str(lookahead) ' Temperature: ' num2str(temperature) ' Iterations: ' num2str(iterations)]);
-    scale = 2^(bitdepth-1); % produce a reasonable volume for histogram algorithm to work
-    minpal = (-scale) * clamping;
-    maxpal = (scale-1) * clamping;
     [error, ~] = compress_with_palette(data_in, weights, palette, lookahead);
     disp(['Iteration 0 Error: ' num2str(error) ' Palette: ' num2str(palette)]);
     for i = 1:iterations
         diff = zeros(1, length(palette));
-        while (sum(abs(diff))==0)
+        while (~any(diff))
             diff = round(randn(1, length(palette)) * temperature);
         end
-        test_palette = palette + diff;
-        test_palette = min(maxpal, max(minpal, test_palette));
+        test_palette = clamp8(palette + diff);
         [test_error, ~] = compress_with_palette(data_in, weights, test_palette, lookahead);
         if (test_error <= error)
-            test_palette = sort(test_palette);
+            palette = sort(test_palette);
             error = test_error;
-            palette = test_palette;
             disp(['Iteration ' num2str(i) ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
         end
     end
 end
-
-
-% Simulated annealing with histogram-based error estimation
-function [error, palette] = first_estimate(data, weights, bits_per_sample)
-    [hist_deltas, hist_weights] = gen_hist_map(data, weights); % generate histogram for quick palette check        
-    maxpal = max(hist_deltas);
-    minpal = min(hist_deltas);
-    disp('first_estimate');
-    disp(['max: ' num2str(maxpal) ' min: ' num2str(minpal)]);
-    palette = ones(1, 2^bits_per_sample) * ((maxpal+minpal)/2);
-    error = quick_palette_test(hist_deltas, hist_weights, palette);
-    disp(['Initial: Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-    for temperature = linspace((maxpal-minpal)/2, 0, 100000000 / length(data))
-        test_palette = palette + randn(1, length(palette)) * temperature;
-        test_palette = min(maxpal, max(minpal, test_palette));
-        test_error = quick_palette_test(hist_deltas, hist_weights, test_palette);
-        if (test_error <= error)
-            test_palette = sort(test_palette);
-            error = test_error;
-            palette = test_palette;
-            disp(['Temperature: ', num2str(temperature), ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-        end
-    end
-    disp('end');
-end
-
-
-
-% prepare for quick_palette_test
-function [hist_deltas, hist_weights] = gen_hist_map(data_in, weights)
-    hist_map = containers.Map('KeyType','int32', 'ValueType','double');
-    recon_1 = 0;
-    recon_2 = 0;
-    for i = 1:length(data_in)
-        val = data_in(i);
-        recon_slope = recon_1 - recon_2;
-        prediction = recon_1 + recon_slope;
-        delta = val - prediction;
-        if (recon_1 < 0)
-            delta = -delta;
-        end
-        key = round(delta);
-        inc = weights(i);
-        if isKey(hist_map, key)
-            hist_map(key) = hist_map(key) + inc;
-        else
-            hist_map(key) = inc;
-        end
-        if (recon_1 < 0)
-            estimate = prediction - delta;
-        else
-            estimate = prediction + delta;
-        end
-        assert(abs(estimate-val)<0.1);
-        recon_2 = recon_1;
-        recon_1 = val;
-    end
-    hist_deltas = double(cell2mat(keys(hist_map)));
-    hist_weights = cell2mat(values(hist_map));
-end
-
-
-
-% todo: optimize
-function [total_error] = quick_palette_test(hist_deltas, hist_weights, palette)
-    error_matrix = abs(palette' - hist_deltas);
-    column_errors = min(error_matrix);
-    column_errors_weighted = column_errors .* hist_weights;
-    total_error = sum(column_errors_weighted);
-end
-
-
 
 
 % Run a simplified (for now) compression and return data
@@ -143,11 +67,10 @@ function [local_error, total_error, recon, index] = compress_with_palette_step(d
     recon_slope = recon_1 - recon_2;
     prediction = recon_1 + recon_slope;
     if (recon_1 < 0)
-        palette_adj = -palette;
+        recon_opts = prediction - palette;
     else
-        palette_adj = palette;
+        recon_opts = prediction + palette;
     end
-    recon_opts = prediction + palette_adj;
     local_error_opts = abs(recon_opts - val) * weights(pos);
     if lookahead>0 && pos<length(data_in)
         tail_error_opts = zeros(1, length(palette));
@@ -166,4 +89,7 @@ function [local_error, total_error, recon, index] = compress_with_palette_step(d
 end
 
 
+function [val] = clamp8(val)
+    val = double(int8(val));
+end
 
