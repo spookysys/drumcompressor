@@ -17,7 +17,7 @@ function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, 
         
         % output the thing
         disp('Compressing');
-        [error, indices] = compress_with_palette(data_in, weights, palette, 4);
+        [error, indices] = compress_with_palette(data_in, weights, palette, 5);
         disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
         disp('Done');
     end
@@ -49,7 +49,7 @@ end
 
 
 % Run a simplified (for now) compression and return data
-function [total_error, data_out] = compress_with_palette(data_in, weights, palette, lookahead)
+function [avg_error, data_out] = compress_with_palette(data_in, weights, palette, lookahead)
     data_out = zeros(length(data_in), 1);
     recon_1 = 0;
     recon_2 = 0;
@@ -61,6 +61,7 @@ function [total_error, data_out] = compress_with_palette(data_in, weights, palet
         recon_2 = recon_1;
         recon_1 = recon;
     end
+    avg_error = total_error / length(data_in);
 end
 
 
