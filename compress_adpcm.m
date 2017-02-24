@@ -11,7 +11,7 @@ function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, 
         palette = [0 0 0 0];
         error = Inf;
         iteration = 0;
-        for i = 1:300
+        for i = 1:200
             [error, iteration, palette] = optimize_palette(error, iteration, data_in, weights, palette, 2);
         end
         

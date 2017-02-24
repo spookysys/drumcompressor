@@ -2,7 +2,7 @@ block_size = 8;
 adpcm_bits = 2;
 
 % This has a problem with bass-crop
-files = dir('in/kick-cult*.wav');
+files = dir('in/kick-big*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
@@ -38,18 +38,25 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Compression Ratio: ' num2str(orig_len/size) '\r\n']);
     fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / orig_len) '\r\n']);
     fclose(fid);
-
-    % maximize bass signal data range
-    [bass_norm, bass_env_fit] = maximize_range(bass_norm, bass_env_fit, 8);
             
-    % compress bass signal
+    % Calculate weights for bass signal 
     if true
-        adpcm_weights = bass_env_smooth; 
-    elseif false
-        adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_norm)-1)'));
+        env_fit = feval(bass_env_fit', 0:length(bass_norm)-1);
+        m = mean(mean([bass_env_smooth env_fit]));
+        adpcm_weights = m/4 + max(bass_env_smooth, env_fit);
     else
         adpcm_weights = ones(1, length(bass_norm));
     end
+    
+    % Maximize bass signal data range
+    [bass_norm, bass_env_fit] = maximize_range(bass_norm, bass_env_fit, 8);
+
+    % Output debug stuff
+    if (~isempty(bass_norm))
+        save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
+        save_output([checkdir 'bass_norm.wav'], resample(bass_norm/128, block_size, 1), sample_rate);
+    end
+    
     [bass_adpcm_data, bass_adpcm_palette] = compress_adpcm(bass_norm, adpcm_weights, adpcm_bits, 8);
     clear volume_adj;
     clear adpcm_weights;
@@ -59,7 +66,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     bass_norm_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette);
     bass_recon = bass_norm_recon .* bass_env_fit_values;
     if (~isempty(bass_recon))
-        save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1) * 0.25 / 2^7, sample_rate);
+        save_output([checkdir 'bass_norm_recon.wav'], resample(bass_norm_recon, block_size, 1) / 2^7, sample_rate);
         save_output([checkdir 'bass_recon.wav'], resample(bass_recon, block_size, 1), sample_rate);
         bass_recon_upsampled = resample(bass_recon, block_size, 1);
     else
@@ -168,7 +175,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     treble_norm = treble ./ env_smooth;
     if (~isempty(treble_norm))
         save_output([checkdir 'treble_cut.wav'], treble, sample_rate);
-        save_output([checkdir 'treble_norm.wav'], treble_norm * 0.25, sample_rate);
+        save_output([checkdir 'treble_norm.wav'], treble_norm, sample_rate);
     end
     
     % Extract treble color
@@ -230,6 +237,7 @@ function [env_fit, env_smooth, bass_norm, bass] = analyze_bass(data_in, sample_r
     % chop the signal
     bass = bass(1:cut_point);
     bass = pad(bass, samples_per_byte);
+    env_smooth = pad_to(env_smooth, length(bass), 'clamp');
         
     % normalize bass to fit curve
     if true
@@ -238,19 +246,12 @@ function [env_fit, env_smooth, bass_norm, bass] = analyze_bass(data_in, sample_r
         bass_norm = bass ./ max(8./2^8, env_fit_values);
     else
         % better range and smoother dynamics (in theory)
-        env_smooth = pad_to(env_smooth, length(bass), 'clamp');
         bass_norm = bass ./ env_smooth;
     end
     
     % silence everything after the cut-point
     for i = (cut_point+1):length(bass_norm)
         bass_norm(i) = 0;
-    end
-    
-    % Output debug stuff
-    if (~isempty(bass_norm))
-        save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
-        save_output([checkdir 'bass_norm.wav'], resample(bass_norm, block_size, 1) * 0.25, sample_rate);
     end
 end
 
@@ -281,7 +282,7 @@ end
 function data_out = reconstruct_treble(num_samples, env_fit, color_b, color_a, checkdir, sample_rate)
     white = rand(num_samples, 1) * 2 - 1;
     colored = filter(color_b, color_a, white);
-    save_output([checkdir 'treble_norm_recon.wav'], colored * 0.25, sample_rate);
+    save_output([checkdir 'treble_norm_recon.wav'], colored, sample_rate);
     env_fit_x = (0:num_samples-1)';
     env_values = feval(env_fit, env_fit_x);
     data_out = colored .* env_values;
