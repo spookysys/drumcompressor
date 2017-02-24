@@ -31,8 +31,8 @@ function [error, iteration, palette] = optimize_palette(error, iteration, data_i
     test_palette = palette;
     while test_palette == palette
         mask = randi([0 2], 1, length(palette));
-        diffs1 = round(randn(1, length(palette)) * 2);
-        diffs2 = round(randn(1, length(palette)) * 4);
+        diffs1 = randi([-1 1], 1, length(palette));
+        diffs2 = round(randn(1, length(palette)) * 3);
         test_palette(mask==0) = palette(mask==0);
         test_palette(mask==1) = palette(mask==1) + diffs1(mask==1);
         test_palette(mask==2) = palette(mask==2) + diffs2(mask==2);
