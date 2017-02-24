@@ -2,7 +2,7 @@ block_size = 8;
 adpcm_bits = 2;
 
 % This has a problem with bass-crop
-files = dir('in/*.wav');
+files = dir('in/kick-cult*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
@@ -265,12 +265,11 @@ function data_out = decompress_adpcm(data_in, palette)
     for i = 1:length(data_in)
         index = data_in(i);
         palette_val = palette(index);
-        recon_slope = recon_1 - recon_2;
-        prediction = recon_1 + recon_slope;
+        prediction = recon_1 + recon_1 - recon_2;
         if (recon_1 < 0)
-            recon = prediction - palette_val;
+            recon = wrap8(prediction - palette_val);
         else
-            recon = prediction + palette_val;
+            recon = wrap8(prediction + palette_val);
         end
         data_out(i) = recon;
         recon_2 = recon_1;
@@ -307,4 +306,9 @@ function data = pad_to(data_in, len, val)
     end
 end
 
+
+
+function [val] = wrap8(val)
+    val = mod(val+128, 256) - 128;
+end
 
