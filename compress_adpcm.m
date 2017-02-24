@@ -11,13 +11,13 @@ function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, 
         palette = [0 0 0 0];
         error = Inf;
         iteration = 0;
-        for i = 1:600
+        for i = 1:300
             [error, iteration, palette] = optimize_palette(error, iteration, data_in, weights, palette, 2);
         end
         
         % output the thing
         disp('Compressing');
-        [error, indices] = compress_with_palette(data_in, weights, palette, 6);
+        [error, indices] = compress_with_palette(data_in, weights, palette, 4);
         disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
         disp('Done');
     end
