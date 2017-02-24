@@ -6,17 +6,17 @@ files = dir('in/*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
-    main(['in/' filename], ['out/' filename], ['out_check/' filename '/'], block_size, adpcm_bits);
+    process_file(['in/' filename], ['out/' filename], ['out_check/' filename '/'], block_size, adpcm_bits);
 end
 
 
-function main(infile, outfile, checkdir, block_size, adpcm_bits)
+function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     samples_per_byte = 8 / adpcm_bits;
     [~,~,~] = mkdir(checkdir);
-    [data_in, sample_rate] = load_input(infile, block_size);
+    [data_in, sample_rate] = load_input(infile);
     save_output([checkdir 'orig.wav'], data_in, sample_rate);
 
-    [bass_env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
+    [bass_env_fit, bass_env_smooth, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
     [treble_env_fit, treble_color_b, treble_color_a, treble_cut_point] = analyze_treble(data_in, sample_rate, block_size, checkdir);
 
     orig_len = length(data_in);
@@ -39,15 +39,18 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Bits Per Sample: ' num2str(size*8 / orig_len) '\r\n']);
     fclose(fid);
 
-    % Compress bass
+    % maximize bass signal data range
+    [bass_norm, bass_env_fit] = maximize_range(bass_norm, bass_env_fit, 8);
+            
+    % compress bass signal
     if true
+        adpcm_weights = bass_env_smooth; 
+    elseif false
         adpcm_weights = max(1./256, feval(bass_env_fit, (0:length(bass_norm)-1)'));
     else
         adpcm_weights = ones(1, length(bass_norm));
     end
-    [bass_adpcm_data, bass_adpcm_palette, volume_adj] = compress_adpcm(bass_norm, adpcm_weights, adpcm_bits, 8);
-    bass_env_fit.a = bass_env_fit.a / volume_adj;
-    bass_env_fit.c = bass_env_fit.c / volume_adj;
+    [bass_adpcm_data, bass_adpcm_palette] = compress_adpcm(bass_norm, adpcm_weights, adpcm_bits, 8);
     clear volume_adj;
     clear adpcm_weights;
     
@@ -91,9 +94,26 @@ function main(infile, outfile, checkdir, block_size, adpcm_bits)
     save_output(outfile, mix_long, sample_rate);
     
     % Export to C
-    export(infile, bass_adpcm_data, bass_adpcm_palette, bass_env_fit, treble_color_b, treble_color_a, treble_env_fit);
+    %export(infile, bass_adpcm_data, bass_adpcm_palette, bass_env_fit, treble_color_b, treble_color_a, treble_env_fit);
 end
 
+% scale smallest data value to -128 and biggest data value to +127,
+% and compensate by adjusting envelope constants
+function [data, env_fit] = maximize_range(data, env_fit, bitdepth)
+    % normalize
+    scale = 2^(bitdepth-1);
+    minval = -scale;
+    maxval =  scale-1;
+
+    % signal should be in signed byte range
+    volume_adj = [minval-.49 maxval+.49] ./ [min(data) max(data)]; 
+    volume_adj = min(volume_adj(volume_adj > 0));
+    data = data .* volume_adj;
+
+    % recover in envelope
+    env_fit.a = env_fit.a / volume_adj;
+    env_fit.c = env_fit.c / volume_adj;
+end
 
 function data_out = clip_sound(data_in, bits)
     max_val = 2^(bits-1)-1;
@@ -102,9 +122,8 @@ function data_out = clip_sound(data_in, bits)
 end
 
 % Load wav-file
-function [data, sample_rate] = load_input(filename, block_size)
+function [data, sample_rate] = load_input(filename)
 	[data, sample_rate] = audioread(filename);
-    orig_len = length(data);
     data = sum(data, 2); % combine channels
     scaler = max(abs(data)); % normalize
     data = data / scaler; % normalize
@@ -129,7 +148,6 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
 
 	% Find volume envelopes
     env = get_env(treble);
-    env_fit = fit((0:length(treble)-1)', env, 'exp2');
     env_fit = fit((0:length(treble)-1)', env, 'exp2', fitoptions('exp2','upper',[Inf 0 Inf 0]));
     env_smooth = smooth(env, smooth_window);
 
@@ -178,7 +196,7 @@ function [env] = get_env(data_in)
 end
 
 % Prepare data for compression
-function [env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
+function [env_fit, env_smooth, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir)
     smooth_window = 50;
     
 	% extract and resample bass
@@ -188,7 +206,6 @@ function [env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_s
     
     % calculate and fit volume envelope
     env = get_env(bass);
-    env_fit = fit((0:length(bass)-1)', env, 'exp2');
     env_fit = fit((0:length(bass)-1)', env, 'exp2', fitoptions('exp2','upper',[Inf 0 Inf 0]));
     env_smooth = smooth(env, smooth_window);
     
@@ -215,7 +232,7 @@ function [env_fit, bass_norm, bass] = analyze_bass(data_in, sample_rate, block_s
     bass = pad(bass, samples_per_byte);
         
     % normalize bass to fit curve
-    if false
+    if true
         % more accurate dynamics (in theory)
         env_fit_values = feval(env_fit, (0:length(bass)-1)');
         bass_norm = bass ./ max(8./2^8, env_fit_values);

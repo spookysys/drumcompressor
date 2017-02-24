@@ -2,54 +2,22 @@
 
 
 
-function [indices, palette, volume_adj] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
+function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
     if (length(data_in)==0)
         indices = [];
         palette = [];
-        volume_adj = 1;
     else
-        % produce a reasonable volume for histogram algorithm to work
-        scale = 2^(bitdepth-1);
-        minval = -scale;
-        maxval =  scale-1;
-        data = data_in; clear data_in;
-        
-        % signal should be in signed byte range
-        signal_adj = [minval-.49 maxval+.49] ./ [min(data) max(data)]; % scale smallest data value to -128 and biggest data value to +127
-        signal_adj = min(signal_adj(signal_adj > 0));
-        data = data .* signal_adj;
-
-        % starting point
+        % Determine optimal palette
+        effort = 300;
         palette = [0 0 0 0];
-       
-        % Optimize palette
-        effort = 300;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 100, effort * min(1, 2000/length(data)), bits_per_sample, bitdepth, 1.5);
-        
-
-        % both palette and signal should be in signed byte range
-        palette_adj = [minval-.49 maxval+.49] ./ [min(palette) max(palette)]; % scale most negative delta to -128 and most positive delta to +127
-        palette_adj = min(palette_adj(palette_adj > 0));
-        palette_adj = min(1, palette_adj); % never increase volume as this would bring signal out of byte range
-        
-        palette = round(palette .* palette_adj);
-        data = data .* palette_adj;
-        
-        disp(['max data: ' num2str(max(data)) ' min data: ' num2str(min(data))]);
-        disp(['Adjusted palette: ' num2str(palette)]);
-                
-        % Optimize palette again
-        effort = 300;
-        [error, palette] = optimize_palette(data, weights, palette, 2, 3, effort * min(1, 2000/length(data)), bits_per_sample, bitdepth, 1);
+        [error, palette] = optimize_palette(data_in, weights, palette, 2, 100, effort * min(1, 2000/length(data_in)), bits_per_sample, bitdepth, 1);
+        [error, palette] = optimize_palette(data_in, weights, palette, 2, 3, effort * min(1, 2000/length(data_in)), bits_per_sample, bitdepth, 1);
         
         % output the thing
         disp('Compressing');
-        [error, indices] = compress_with_palette(data, weights, palette, 6);
+        [error, indices] = compress_with_palette(data_in, weights, palette, 6);
         disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
         disp('Done');
-        
-        % output result of volume adjustments made
-        volume_adj = signal_adj * palette_adj;
     end
 end
 
