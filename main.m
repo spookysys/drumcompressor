@@ -2,7 +2,7 @@ block_size = 8;
 adpcm_bits = 2;
 
 % This has a problem with bass-crop
-files = dir('in/kick-*.wav');
+files = dir('in/*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);

@@ -30,17 +30,12 @@ end
 function [error, iteration, palette] = optimize_palette(error, iteration, data_in, weights, palette, lookahead)
     test_palette = palette;
     while test_palette == palette
-        mask = randi([0 2], 1, length(palette));
-        diffs1 = randi([-1 1], 1, length(palette));
-        diffs2 = round(randn(1, length(palette)) * 3);
-        test_palette(mask==0) = palette(mask==0);
-        test_palette(mask==1) = palette(mask==1) + diffs1(mask==1);
-        test_palette(mask==2) = palette(mask==2) + diffs2(mask==2);
-        % test_palette(mask==3) = floor(rand() * 256) - 128;
+        diff = [5 1 1 5] .* datasample([0 1], length(palette)) .* randn(1, length(palette));
+        test_palette = palette + round(diff);
     end
     [test_error, ~] = compress_with_palette(data_in, weights, test_palette, lookahead);
     if (test_error <= error)
-        palette = sort(test_palette);
+        palette = test_palette;
         error = test_error;
         disp(['Iteration ' num2str(iteration) ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
     end
@@ -61,7 +56,7 @@ function [avg_error, data_out] = compress_with_palette(data_in, weights, palette
         recon_2 = recon_1;
         recon_1 = recon;
     end
-    avg_error = total_error / length(data_in);
+    avg_error = total_error / sum(weights);
 end
 
 
