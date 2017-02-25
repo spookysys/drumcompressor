@@ -4,17 +4,20 @@ function [ output_args ] = export(wav_filename, bass_data, bass_palette, bass_en
     fprintf(log_fid, [name '\n']);
     
     % output bass_data
-    bass_data_reshaped = reshape(bass_data, [4, length(bass_data)/4]);
-    bass_data_packed = zeros(1, length(bass_data)/4);
-    for i = 1:length(bass_data_reshaped)
-        tmp = bass_data_reshaped(:,i)';
-        tmp = tmp .* [2^0 2^2 2^4 2^6];
-        tmp = sum(tmp);
-        bass_data_packed(i) = tmp;
+    if ~isempty(bass_data)
+        bass_data_reshaped = reshape(bass_data, [4, length(bass_data)/4]);
+        bass_data_packed = zeros(1, length(bass_data)/4);
+        [~, num_bytes] = size(bass_data_reshaped);
+        for i = 1:num_bytes
+            tmp = bass_data_reshaped(:,i)'; % jk_prc_10 fails here
+            tmp = tmp .* [2^0 2^2 2^4 2^6];
+            tmp = sum(tmp);
+            bass_data_packed(i) = tmp;
+        end
+        fprintf(data_fid, '%.0f,' , bass_data_packed);
+        clear bass_data_reshaped;
+        clear bass_data_packed;
     end
-    fprintf(data_fid, '%.0f,' , bass_data_packed);
-    clear bass_data_reshaped;
-    clear bass_data_packed;
     
     % output struct
     bass_env_coeff = coeffvalues(bass_env_fit);

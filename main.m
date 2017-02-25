@@ -2,7 +2,7 @@ block_size = 8;
 adpcm_bits = 2;
 
 % This has a problem with bass-crop
-files = dir('in/*.wav');
+files = dir('in/kick-*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
@@ -98,7 +98,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     save_output(outfile, mix_long / 128, sample_rate);
     
     % Export to C
-    %export(infile, bass_adpcm_data, bass_adpcm_palette, bass_env_fit, treble_color_b, treble_color_a, treble_env_fit);
+    export(infile, bass_adpcm_data, bass_adpcm_palette, bass_env_fit, treble_color_b, treble_color_a, treble_env_fit);
 end
 
 
@@ -129,7 +129,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
 
 	% Find volume envelopes
     env = get_env(treble);
-    env_fit = fit((0:length(treble)-1)', env, 'exp2', fitoptions('exp2','upper',[Inf 0 Inf 0]));
+    env_fit = fit((0:length(treble)-1)', env, 'exp2', my_fitoptions());
     env_smooth = smooth(env, smooth_window);
 
     % find where volume drops below 1/256
@@ -141,6 +141,9 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
         if (vol_real > limit && vol_fit > limit)
             cut_point = i;
         end
+    end
+    if cut_point < block_size
+        cut_point = block_size
     end
     treble = treble(1:cut_point);
     env_smooth = env_smooth(1:cut_point);
@@ -174,6 +177,11 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     env_fit.c = env_fit.c * volume_adj;
 end
 
+function ret = my_fitoptions()
+    ac_limit = 8;
+    ret = fitoptions('exp2','upper',[ac_limit 0 ac_limit 0],'lower',[-ac_limit -Inf -ac_limit -Inf]);
+end
+
 function [env] = get_env(data_in)
     padding = 1000;
     tmp = [zeros(padding, 1); data_in; zeros(padding, 1)];
@@ -193,7 +201,7 @@ function [env_fit, env_smooth, bass_norm, bass] = analyze_bass(data_in, sample_r
     
     % calculate and fit volume envelope
     env = get_env(bass);
-    env_fit = fit((0:length(bass)-1)', env, 'exp2', fitoptions('exp2','upper',[Inf 0 Inf 0]));
+    env_fit = fit((0:length(bass)-1)', env, 'exp2', my_fitoptions());
     env_smooth = smooth(env, smooth_window);
     clear env;
     

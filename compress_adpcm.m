@@ -36,7 +36,7 @@ function [error, iteration, palette] = optimize_palette(error, iteration, data_i
         test_palette(mask==0) = palette(mask==0);
         test_palette(mask==1) = palette(mask==1) + diffs1(mask==1);
         test_palette(mask==2) = palette(mask==2) + diffs2(mask==2);
-        test_palette(mask==3) = floor(rand() * 256) - 128;
+        % test_palette(mask==3) = floor(rand() * 256) - 128;
     end
     [test_error, ~] = compress_with_palette(data_in, weights, test_palette, lookahead);
     if (test_error <= error)
