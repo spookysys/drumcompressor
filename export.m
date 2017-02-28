@@ -45,22 +45,21 @@ function export_env(fid, env_fit, comment)
     if length(coeff) ~= 4
         coeff = [0 0 0 0];
     end
-    
-    scale_exp = 0; % exponent of a and c scale
-    scales = [0 0]; % a and c
-    decays = [0 0]; % b and d
-    
+    coeff(isnan(coeff)) = 0;
+        
     % Rescale a and c
     volume_adj = [127.49 / max(coeff([1 3])) -128.49 / min(coeff([1 3]))];
     volume_adj = min(volume_adj(volume_adj > 0));
     scale_exp = floor(log2(volume_adj));
+    scale_exp = min(scale_exp, 255);
     scales = max(-128, min(127, round(coeff([1 3]) * 2^scale_exp)));
     clear volume_adj;
 
     % Rescale decay
     decays = exp(coeff([2 4])*8);
     assert(all(decays >= 0 & decays <= 1));
-    decays = round(decays * 256);
+    decays = decays * 256;
+    decays = round(decays);
     decays = min(decays, 255);
     
     % Result
