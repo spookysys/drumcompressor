@@ -1,0 +1,6 @@
+{
+	"files.associations": {
+		"*.map": "json",
+		"array": "cpp"
+	}
+}

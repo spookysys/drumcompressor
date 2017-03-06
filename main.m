@@ -25,7 +25,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
         
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
-    size1 = 4 + 4 + 3 + 2 + 2 + 4; % bass_fit, treble_fit, treble_b, treble_a, bass_length, palette
+    size1 = 5 + 5 + 6 + 2 + 4; % bass_env, treble_env, treble_filter, bass_length, palette
     size2 = length(bass_norm) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
     fprintf(fid, [ 'Original length: ' num2str(orig_len) '\r\n']);

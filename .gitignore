@@ -5,3 +5,4 @@ packs/
 out/*
 out_check/*
 export/*
+*.exe

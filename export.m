@@ -1,21 +1,8 @@
-function [ output_args ] = export(wav_filename, bass_data, palette, bass_env_fit, treble_b, treble_a, treble_env_fit)
+function export(wav_filename, bass_data, palette, bass_env_fit, treble_b, treble_a, treble_env_fit)
     [data_fid, struct_fid, name] = start(wav_filename);
     
-    % output bass_data
-    if ~isempty(bass_data)
-        bass_data_reshaped = reshape(bass_data, [4, length(bass_data)/4]);
-        bass_data_packed = zeros(1, length(bass_data)/4);
-        [~, num_bytes] = size(bass_data_reshaped);
-        for i = 1:num_bytes
-            tmp = bass_data_reshaped(:,i)';
-            tmp = tmp .* [2^0 2^2 2^4 2^6];
-            tmp = sum(tmp);
-            bass_data_packed(i) = tmp;
-        end
-        fprintf(data_fid, '%.0f,' , bass_data_packed);
-        clear bass_data_reshaped;
-        clear bass_data_packed;
-    end
+    % output bass data
+    export_bass_data(data_fid, bass_data);
     
     % output treble envelope
     export_env(struct_fid, treble_env_fit, 'treble envelope');
@@ -32,11 +19,26 @@ function [ output_args ] = export(wav_filename, bass_data, palette, bass_env_fit
     end
     fprintf(struct_fid, '{ %d, %d, %d, %d }, // bass palette\n', palette(1), palette(2), palette(3), palette(4));
     
-    % pointer to bass data
-    fprintf(struct_fid, [lower(name) '_data // bass data\n']);
+    % bass data
+    fprintf(struct_fid, ['sizeof(' lower(name) '_data), ' lower(name) '_data // bass data\n']);
     
     fclose(data_fid);
     fclose(struct_fid);
+end
+
+function export_bass_data(fid, bass_data)
+    if ~isempty(bass_data)
+        bass_data_reshaped = reshape(bass_data, [4, length(bass_data)/4]);
+        bass_data_packed = zeros(1, length(bass_data)/4);
+        [~, num_bytes] = size(bass_data_reshaped);
+        for i = 1:num_bytes
+            tmp1 = bass_data_reshaped(:,i)' - 1;
+            tmp2 = tmp1 .* [2^0 2^2 2^4 2^6];
+            tmp3 = sum(tmp2);
+            bass_data_packed(i) = tmp3;
+        end
+        fprintf(fid, '%.0f,' , bass_data_packed);
+    end
 end
 
 function export_env(fid, env_fit, comment)
@@ -83,18 +85,29 @@ function [data_fid, struct_fid, name] = start(wav_filename)
      [~,~,~] = mkdir(fullfile('export', 'struct'));
      [~, name, ~] = fileparts(wav_filename);
      name = lower(name);
+     name = regexprep(name, '[^\w]', '_');
+     
+     fid = fopen(fullfile('export', 'use_all.inc'), 'a');
+     fprintf(fid, [ '#define USE_' upper(name) '\n']);
+     fclose(fid);
+     clear fid;
+     
+     fid = fopen(fullfile('export', 'names.inc'), 'a');
+     fprintf(fid, [ '"' lower(name) '",\n']);
+     fclose(fid);
+     clear fid;
      
      fid = fopen(fullfile('export', 'datas.inc'), 'a');
-     fprintf(fid, [ '#ifdef INC_' upper(name) '\n']);
+     fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
      fprintf(fid, [ 'const unsigned char ' name '_data[] = {\n']);
      fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
      fprintf(fid, [ '};\n']);
      fprintf(fid, [ '#endif\n']);
      fclose(fid);
-     clear fid;
+     clear fid;     
      
      fid = fopen(fullfile('export', 'structs.inc'), 'a');
-     fprintf(fid, [ '#ifdef INC_' upper(name) '\n']);
+     fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
      fprintf(fid, [ '{\n']);
      fprintf(fid, [ '#include \"struct/' name '.inc\"\n']);
      fprintf(fid, [ '},\n']);
@@ -103,7 +116,7 @@ function [data_fid, struct_fid, name] = start(wav_filename)
      clear fid;     
           
      fid = fopen(fullfile('export', 'enums.inc'), 'a');
-     fprintf(fid, [ '#ifdef INC_' upper(name) '\n']);
+     fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
      fprintf(fid, [ upper(name) ',\n']);
      fprintf(fid, [ '#endif\n']);
      fclose(fid);
