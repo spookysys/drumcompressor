@@ -13,14 +13,21 @@ function export(wav_filename, bass_data, palette, bass_env_fit, treble_b, treble
     % output bass envelope
     export_env(struct_fid, bass_env_fit, 'bass envelope');
     
+    % bass start
+    fprintf(struct_fid, '{\n');
+    
     % output bass palette
     if length(palette) ~= 4
         palette = [0 0 0 0];
     end
-    fprintf(struct_fid, '{ %d, %d, %d, %d }, // bass palette\n', palette(1), palette(2), palette(3), palette(4));
+    fprintf(struct_fid, '    { %d, %d, %d, %d }, // bass palette\n', palette(1), palette(2), palette(3), palette(4));
     
     % bass data
-    fprintf(struct_fid, ['sizeof(' lower(name) '_data), ' lower(name) '_data // bass data\n']);
+    fprintf(struct_fid, ['    sizeof(' lower(name) '_data),\n']);
+    fprintf(struct_fid, ['    ' lower(name) '_data // bass data\n']);
+    
+    % bass end
+    fprintf(struct_fid, '}\n');
     
     fclose(data_fid);
     fclose(struct_fid);
@@ -69,15 +76,11 @@ function export_env(fid, env_fit, comment)
  end
 
 function export_filter(fid, b, a)
-    adj = [127.49 / max([1 b a]) -128.49 / min([1 b a])];
-    adj = min(adj(adj > 0));
-    ex = floor(log2(adj));
-    adj = 2^ex;
-    b_ = round(b * adj);
-    a_ = round(a * adj);
-    b_ = max(-128, min(127, b_));
-    a_ = max(-128, min(127, a_));
-    fprintf(fid, '{ %d, %d, %d, %d, %d, %d }, // treble filter\n' , ex, b_(1), b_(2), a_(1), a_(2), a_(3));
+    ex = 6; % empirical
+    tmp = [a b];
+    tmp = round(tmp * 2^ex);
+    tmp = max(-128, min(127, tmp));
+    fprintf(fid, '{ /*%d,*/ %d, %d, %d, %d, %d }, // treble filter\n' , tmp(1), tmp(2), tmp(3), tmp(4), tmp(5), tmp(6));
 end
 
 function [data_fid, struct_fid, name] = start(wav_filename)

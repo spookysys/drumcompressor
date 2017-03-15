@@ -8,13 +8,21 @@ using namespace std;
 
 struct DrumEnv
 {
-	int8_t exponent, magnitude0, magnitude1;
+	int8_t exponent;
+	int8_t magnitude0, magnitude1;
 	uint8_t falloff0, falloff1;
 };
 
 struct DrumFilter
 {
-	int8_t exponent, b1, b2, a1, a2, a3;
+	int8_t a2, a3, b1, b2, b3;
+};
+
+struct AdpcmSample
+{
+	std::array<int8_t, 4> palette;
+	uint16_t len;
+	const uint8_t* data;
 };
 
 struct Drum
@@ -22,10 +30,9 @@ struct Drum
 	DrumEnv treble_env;
 	DrumFilter treble_filter;
 	DrumEnv bass_env;
-	std::array<int8_t, 4> bass_palette;
-	uint16_t bass_len;
-	const uint8_t* bass_data;
+	AdpcmSample bass_sample;
 };
+
 
 namespace drums
 {
@@ -37,106 +44,95 @@ namespace drums
 	#include "export/datas.inc"
 	Drum drums[] = {
 		#include "export/structs.inc"
-		/*
-		{
-			{ 6, 69, 1, 255, 255 }, // treble envelope
-			{ 6, 10, -19, 64, -114, 57 }, // treble filter
-			{ 7, 106, 1, 249, 255 }, // bass envelope
-			{ -28, 8, -8, -73 }, // bass palette
-			clap_808_data // bass data
-		}
-		*/
 	};
 }
 
 
 class AdpcmDecoder
 {
+	array<int8_t, 4> palette;
 	const uint8_t* ptr;
 	const uint8_t* end;
-	array<int8_t, 4> palette;
-
-	uint8_t word;
 	uint8_t subidx;
-	int8_t getIdx()
+	uint8_t word;
+
+	uint8_t getIdx()
 	{
-		if (--subidx) {
-			word >>= 2;
-		} else if (ptr!=end) {
+		uint8_t ret = word & 3;
+		word >>= 2;
+		subidx--;
+		if (subidx==0) {
 			subidx = 4;
+			word = ((ptr+1)!=end) ? *ptr : 0;
 			ptr++;
-			word = *ptr;
 		}
-		return word & 3;
+		return ret;
 	}
 
+	int8_t recon1;
+	int8_t recon2;
 public:
-	void trigger(const uint8_t* data, uint16_t len, const array<int8_t, 4>& palette)
+	void reset()
 	{
-		this->ptr = data;
-		this->end = data+len;
-		this->palette = palette;
+		ptr = end;
 	}
 
-	void next()
+	void trigger(const AdpcmSample& sample)
 	{
-		idx = getIdx();
-		pal = palette[idx];
-        prediction = recon_1 + recon_1 - recon_2;
-        if (recon_1 < 0)
-            recon = wrap8(prediction - palette_val);
-        else
-            recon = wrap8(prediction + palette_val);
-        end
-        data_out(i) = recon;
-        recon_2 = recon_1;
-        recon_1 = recon;
-    end
-		
+		this->palette = sample.palette;
+		this->ptr = sample.data + 1;
+		this->end = sample.data + sample.len + 1;
+		if (isActive()) {
+			this->word = *ptr;
+			this->subidx = 4;
+		}
+		this->recon1 = 0;
+		this->recon2 = 0;
 	}
+
+	bool isActive()
+	{
+		return ptr!=end;
+	}	
 
 	int8_t get()
 	{
-		return val;
+		uint8_t idx = getIdx();
+		int8_t palval = palette[idx];
+		int8_t prediction = recon_1 + recon_1 - recon_2;
+		int8_t recon = prediction; 
+		if (recon_1 < 0) {
+			recon -= palette_val;
+		} else {
+			recon += palette_val;
+		}
+		this->recon_2 = this->recon_1;
+		this->recon_1 = this->recon;
+		return recon;
 	}
 
 };
 
+
 class DrumDecoder
 {
-	uint8_t bass_data_idx;
-	uint8_t bass_data_byte;
-	const uint8_t* bass_data_ptr;
-	const uint8_t* bass_data_end;
-	array<int8_t, 4> bass_palette;
-	int8_t bass_val;
-public:
+	AdpcmDecoder adpcmDecoder;
 
-	int8_t bass_data_iter()
-	{
-	}
+public:
 
 	void trigger(const Drum& drum)
 	{
-		this->bass_palette = drum.bass_palette;
-
-		this->bass_data_ptr = drum.bass_data;
-		this->bass_data_end = this->bass_data_ptr + drums.bass_len;
-		this->bass_data_idx = this->bass_data;
-
-		// state
-		this->bass_val = 0;
+		adpcmDecoder.trigger(drum.bass_sample);
+		adpcmDecoder.next();
 	}
 
 	void decodeBlock(int16_t* dest)
 	{
-		if (bass_data_pos != bass_data_end) {
-			if (--bass_data_subidx == 0) {
+		if (adpcmDecoder.isActive()) {
+			int8_t bass_last = this->bass_val;
+			this->bass_val = adpcmDecoder.get();
 
-			}
 		}
-			
-
 		
 	}
 };
