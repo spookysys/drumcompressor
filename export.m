@@ -65,13 +65,18 @@ function export_env(fid, env_fit, comment)
     clear volume_adj;
 
     % Rescale decay
+    decay_booster = 2^2;
     decays = exp(coeff([2 4])*8);
     assert(all(decays >= 0 & decays <= 1));
+    decays = 1 - decays;
     decays = decays * 256;
+    decays = decays * decay_booster;
     decays = round(decays);
+    assert(all(decays >= 0));% & decays <= 255));
     decays = min(decays, 255);
     
     % Result
+    fprintf(fid, '// %f, %f, %f, %f // %s\n', coeff(1), coeff(3), coeff(2), coeff(4), comment);
     fprintf(fid, '{ %d, %d, %d, %d, %d }, // %s\n', scale_exp, scales(1), scales(2), decays(1), decays(2), comment);
  end
 
@@ -80,6 +85,7 @@ function export_filter(fid, b, a)
     tmp = [a b];
     tmp = round(tmp * 2^ex);
     tmp = max(-128, min(127, tmp));
+    fprintf(fid, '// %f, %f, %f, %f, %f, %f // treble filter\n' , a(1), a(2), a(3), b(1), b(2), b(3));
     fprintf(fid, '{ /*%d,*/ %d, %d, %d, %d, %d }, // treble filter\n' , tmp(1), tmp(2), tmp(3), tmp(4), tmp(5), tmp(6));
 end
 

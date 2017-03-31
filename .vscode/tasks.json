@@ -5,5 +5,17 @@
 	"command": "g++",
 	"isShellCommand": true,
 	"args": ["-std=c++14", "-g", "play_all.cpp", "-o", "play_all.exe"],
-	"showOutput": "always"
+	"showOutput": "always",
+	"problemMatcher": {
+		"owner": "cpp",
+		"fileLocation": ["relative", "${workspaceRoot}"],
+		"pattern": {
+			"regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+			"file": 1,
+			"line": 2,
+			"column":3,
+			"severity": 4,
+			"message": 5
+		}
+	}
 }

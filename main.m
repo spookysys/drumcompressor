@@ -1,3 +1,4 @@
+rng(1234);
 block_size = 8;
 adpcm_bits = 2;
 
