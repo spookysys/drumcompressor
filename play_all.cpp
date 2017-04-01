@@ -1,9 +1,17 @@
-#include <cstdint>
-#include <array>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <fcntl.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <cstdint>
+#include <math.h>
+#include <array>
 #include "export/use_all.inc"
 //#define USE_JK_BD_02
 //#define USE_JK_BD_06
+
+#define DUSTEFILTER1
+#define DUSTEFILTER2
 
 static const int block_size = 8;
 static const int sample_rate = 22050;
@@ -152,40 +160,37 @@ struct ActiveEnv
 class DrumDecoder
 {
 	AdpcmDecoder adpcmDecoder;
-	int16_t bass_val;
-	
-	ActiveEnv bass_env;
-	
-	int16_t get_bass_val()
-	{
-		int16_t adpcm = adpcmDecoder.get();
-		int16_t volume = bass_env.get();
-		int32_t ret = adpcm * volume;
-		return ret;
-	}
+	int8_t bass_val_original;
+	int16_t bass_val_filtered;
 public:
 
 	void trigger(const DrumExp& drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
-		bass_env.trigger(drum.bass_env);
-		bass_val = get_bass_val();
+		bass_val_original = adpcmDecoder.get();
+		bass_val_filtered = bass_val_original << 8;
 	}
 
 	void decodeBlock(int16_t* dest)
 	{
 		if (adpcmDecoder.isActive()) {
-			int16_t prev_bass_val = this->bass_val;
-			this->bass_val = get_bass_val();
+			int8_t bass_val_original_prev = this->bass_val_original;
+			#ifdef DUSTEFILTER1
+			this->bass_val_original = (this->bass_val_original>>1) + (adpcmDecoder.get()>>1);
+			#else
+			this->bass_val_original = adpcmDecoder.get();
+			#endif
+			int16_t bass_delta = int16_t(this->bass_val_original - bass_val_original_prev) << (8-3);
+			int16_t bass_val = int16_t(bass_val_original_prev) << 8;
 
 			for (int i=0; i<block_size; i++) {
-				int16_t v0 = prev_bass_val >> 4;
-				int16_t v1 = this->bass_val >> 4;
-				int8_t dither_val = 0;
-				if (adpcm_dithering) {
-					dither_val = ((rand() % 3) - 1) << 4;
-				}
-				dest[i] = ((v0 * (block_size-i) + v1 * i + dither_val) / block_size) >> 4;
+				dest[i] = bass_val_filtered;
+				bass_val += bass_delta;
+				#ifdef DUSTEFILTER2
+				bass_val_filtered = (bass_val_filtered>>1) + (bass_val>>1);
+				#else
+				bass_val_filtered = bass_val;
+				#endif
 			}
 		} else {
 			for (int i=0; i<block_size; i++) {
@@ -214,9 +219,9 @@ struct WavHeader
 	uint16_t audio_format = 1; // 1 = PCM
 	uint16_t num_channels = 1;
 	uint32_t sample_rate = 22050; 
-	uint32_t bytes_per_second = 22050;
-	uint16_t bytes_per_frame = 1;
-	uint16_t bits_per_sample = 8;
+	uint32_t bytes_per_second = 2*22050;
+	uint16_t bytes_per_frame = 2;
+	uint16_t bits_per_sample = 16;
 	char subchunk2_id_0 = 'd';
 	char subchunk2_id_1 = 'a';
 	char subchunk2_id_2 = 't';
@@ -225,23 +230,23 @@ struct WavHeader
 };
 
 
-void write_wav(const char* filename, int8_t* data, int num_samples)
+void write_wav(const char* filename, int16_t* data, int num_samples)
 {
 	const int wavheader_size = sizeof(WavHeader);
 	static WavHeader wav_header;
-	wav_header.chunk_size = num_samples + 36;//sizeof(WavHeader)-8;
-	wav_header.subchunk2_size = num_samples;
-	int fid = open(filename, O_WRONLY|O_CREAT|O_TRUNC);
-	write(fid, &wav_header, sizeof(WavHeader));
-	write(fid, data, num_samples);
-	close(fid);
+	wav_header.chunk_size = 2*num_samples + 36;//sizeof(WavHeader)-8;
+	wav_header.subchunk2_size = 2*num_samples;
+	FILE* fid = fopen(filename, "wb");
+	fwrite(&wav_header, 1, sizeof(WavHeader), fid);
+	fwrite(data, 2, num_samples, fid);
+	fclose(fid);
 }
 
 
 int main(int argc, char* argv[])
 {
-	static const int num_blocks = (sample_rate * 2) / block_size;
-	std::array<int8_t, num_blocks*block_size> buffer;
+	static const int num_blocks = (sample_rate * 3) / block_size;
+	std::array<int16_t, num_blocks*block_size> buffer;
 
 	DrumDecoder decoder;
 	for (int drum_i=0; drum_i<drums::num; drum_i++) {
@@ -251,16 +256,10 @@ int main(int argc, char* argv[])
 		for (int block_i=0; block_i<num_blocks; block_i++) {
 			std::array<int16_t, block_size> block_buffer;
 			decoder.decodeBlock(block_buffer.data());
-			std::array<int8_t, block_size> block_buffer_clipped;
 			for (int i=0; i<block_size; i++) {
 				int16_t val = block_buffer[i];
-				if (val > 127) val = 127;
-				if (val < -128) val = -128;
-				val = val + 128;
-				block_buffer_clipped[i] = val;
-			}
-			for (int i=0; i<block_size; i++) {
-				buffer[block_i*block_size + i] = block_buffer_clipped[i];
+				val = val * (32760. / 32768.);
+				buffer[block_i*block_size + i] = val;
 			}
 		}
 		{
