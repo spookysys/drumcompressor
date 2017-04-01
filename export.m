@@ -1,4 +1,4 @@
-function export(wav_filename, bass_data, palette, bass_env_fit, treble_b, treble_a, treble_env_fit)
+function export(wav_filename, bass_data, palette, treble_b, treble_a, treble_env_fit)
     [data_fid, struct_fid, name] = start(wav_filename);
     
     % output bass data
@@ -10,9 +10,6 @@ function export(wav_filename, bass_data, palette, bass_env_fit, treble_b, treble
     % output treble filter
     export_filter(struct_fid, treble_b, treble_a);
 
-    % output bass envelope
-    export_env(struct_fid, bass_env_fit, 'bass envelope');
-    
     % bass start
     fprintf(struct_fid, '{\n');
     

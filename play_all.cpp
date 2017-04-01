@@ -10,12 +10,8 @@
 //#define USE_JK_BD_02
 //#define USE_JK_BD_06
 
-#define DUSTEFILTER1
-#define DUSTEFILTER2
-
 static const int block_size = 8;
 static const int sample_rate = 22050;
-static const bool adpcm_dithering = false;
 
 using namespace std;
 
@@ -42,7 +38,7 @@ struct DrumExp
 {
 	DrumExpEnv treble_env;
 	DrumExpFilter treble_filter;
-	DrumExpEnv bass_env;
+	//DrumExpEnv bass_env;
 	AdpcmSample bass_sample;
 };
 
@@ -186,11 +182,7 @@ public:
 			for (int i=0; i<block_size; i++) {
 				dest[i] = bass_val_filtered;
 				bass_val += bass_delta;
-				#ifdef DUSTEFILTER2
 				bass_val_filtered = (bass_val_filtered>>1) + (bass_val>>1);
-				#else
-				bass_val_filtered = bass_val;
-				#endif
 			}
 		} else {
 			for (int i=0; i<block_size; i++) {
