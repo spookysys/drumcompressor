@@ -46,35 +46,30 @@ function export_bass_data(fid, bass_data)
 end
 
 function export_env(fid, env_fit, comment)
-    % a*exp(b*x) + c*exp(d*x)
+    % a*exp(b*x)
     coeff = coeffvalues(env_fit);
-    if length(coeff) ~= 4
-        coeff = [0 0 0 0];
+    if length(coeff) ~= 2
+        coeff = [0 0];
     end
     coeff(isnan(coeff)) = 0;
         
-    % Rescale a and c
-    volume_adj = [127.49 / max(coeff([1 3])) -128.49 / min(coeff([1 3]))];
-    volume_adj = min(volume_adj(volume_adj > 0));
-    scale_exp = floor(log2(volume_adj));
-    scale_exp = min(scale_exp, 255);
-    scales = max(-128, min(127, round(coeff([1 3]) * 2^scale_exp)));
-    clear volume_adj;
+    a = coeff(1);
+    a = a * (256*256/4);
+    a = round(a);
+    a = min(a, (256*256/4)-1);
 
     % Rescale decay
-    decay_booster = 2^2;
-    decays = exp(coeff([2 4])*8);
-    assert(all(decays >= 0 & decays <= 1));
-    decays = 1 - decays;
-    decays = decays * 256;
-    decays = decays * decay_booster;
-    decays = round(decays);
-    assert(all(decays >= 0));% & decays <= 255));
-    decays = min(decays, 255);
+    b = exp(coeff(2)*8);
+    assert(b >= 0 & b <= 1);
+    b = 1 - b;
+    b = b * 256*256;
+    b = round(b);
+    assert(b >= 0);
+    b = min(b, 256*256-1);
     
     % Result
-    fprintf(fid, '// %f, %f, %f, %f // %s\n', coeff(1), coeff(3), coeff(2), coeff(4), comment);
-    fprintf(fid, '{ %d, %d, %d, %d, %d }, // %s\n', scale_exp, scales(1), scales(2), decays(1), decays(2), comment);
+    fprintf(fid, '// %f, %f // %s\n', coeff(1), coeff(2), comment);
+    fprintf(fid, '{ %d, %d }, // %s\n', a, b, comment);
  end
 
 function export_filter(fid, b, a)

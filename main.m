@@ -1,6 +1,9 @@
 rng(1234);
 block_size = 8;
 adpcm_bits = 2;
+[~,~,~] = mkdir('out');
+[~,~,~] = mkdir('out_check');
+[~,~,~] = mkdir('export');
 
 % This has a problem with bass-crop
 files = dir('in/*.wav');
@@ -26,7 +29,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
         
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
-    size1 = 5 + 6 + 2 + 4; % treble_env, treble_filter, bass_length, palette
+    size1 = 4 + 6 + 2 + 4; % treble_env, treble_filter, bass_length, palette
     size2 = length(bass) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
     fprintf(fid, [ 'Original length: ' num2str(orig_len) '\r\n']);
@@ -118,7 +121,7 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
 
 	% Find volume envelopes
     env = get_env(treble);
-    env_fit = fit((0:length(treble)-1)', env, 'exp2', my_fitoptions());
+    env_fit = fit((0:length(treble)-1)', env, 'exp1', my_fitoptions());
     env_smooth = smooth(env, smooth_window);
 
     % find where volume drops below 1/256
@@ -163,12 +166,12 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     treble_norm = treble ./ env_smooth;
     volume_adj = (128 / mean(abs(hilbert(colored)))) * mean(abs(hilbert(treble_norm)));
     env_fit.a = env_fit.a * volume_adj;
-    env_fit.c = env_fit.c * volume_adj;
+    %env_fit.c = env_fit.c * volume_adj;
 end
 
 function ret = my_fitoptions()
-    ac_limit = 8;
-    ret = fitoptions('exp2','upper',[ac_limit 0 ac_limit 0],'lower',[-ac_limit -Inf -ac_limit -Inf]);
+    ac_limit = 2;
+    ret = fitoptions('exp1','upper',[ac_limit 0],'lower',[-ac_limit -Inf]);
 end
 
 function [env] = get_env(data_in)
@@ -190,27 +193,18 @@ function [bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byt
     
     % calculate and fit volume envelope
     env = get_env(bass);
-    env_fit = fit((0:length(bass)-1)', env, 'exp2', my_fitoptions());
     env_smooth = smooth(env, smooth_window);
     clear env;
     
     % clear samples after volume drops too low
-    limit = 1. / 2^8;
-    cut_point_fit = 0;
-    cut_point_real = 0;
+    limit = 8. / 2^8;
+    cut_point = 0;
     for i = 1:length(bass)
-        vol_fit = feval(env_fit, i-1);
-        if (abs(vol_fit) > limit)
-            cut_point_fit = i;
-        end
         vol_real = env_smooth(i);
         if (abs(vol_real) > limit)
-            cut_point_real = i;
+            cut_point = i;
         end
     end
-    cut_point = min(cut_point_real, cut_point_fit);
-    clear cut_point_real;
-    clear cut_point_fit;
     cut_point = ceil(cut_point/samples_per_byte)*samples_per_byte;
 
     % chop the signal
@@ -246,7 +240,7 @@ function data_out = reconstruct_treble(num_samples, env_fit, color_b, color_a, c
     colored = filter(color_b, color_a, white);
     save_output([checkdir 'treble_colored.wav'], colored / 128, sample_rate);
     env_fit_x = (0:num_samples-1)';
-    env_values = feval(env_fit, env_fit_x);
+    env_values = min(1, feval(env_fit, env_fit_x));
     data_out = colored .* env_values;
 end
 

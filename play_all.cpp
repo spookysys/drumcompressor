@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <math.h>
 #include <array>
+#include <algorithm>
 #include "export/use_all.inc"
 //#define USE_JK_BD_02
 //#define USE_JK_BD_06
@@ -17,9 +18,8 @@ using namespace std;
 
 struct DrumExpEnv
 {
-	int8_t exponent;
-	int8_t magnitude0, magnitude1;
-	uint8_t falloff0, falloff1;
+	uint16_t amplitude;
+	uint16_t falloff;
 };
 
 struct DrumExpFilter
@@ -38,7 +38,6 @@ struct DrumExp
 {
 	DrumExpEnv treble_env;
 	DrumExpFilter treble_filter;
-	//DrumExpEnv bass_env;
 	AdpcmSample bass_sample;
 };
 
@@ -126,68 +125,62 @@ public:
 
 };
 
-struct ActiveEnv
-{
-	int16_t magnitude0, magnitude1;
-	uint8_t falloff0, falloff1;
-
-	static const uint8_t precision = 4;
-	void trigger(const DrumExpEnv& op)
-	{
-		uint8_t mag_shl = precision + 8 - op.exponent;
-		if (mag_shl < 0) mag_shl = 0;
-		this->magnitude0 = int16_t(op.magnitude0) << mag_shl;
-		this->magnitude1 = int16_t(op.magnitude1) << mag_shl;
-		this->falloff0 = op.falloff0;
-		this->falloff1 = op.falloff1;
-	}
-
-	int16_t get()
-	{
-		int16_t ret = (this->magnitude0 + this->magnitude1) >> precision;
-		const uint8_t decay_booster = 2;
-		const uint16_t bias = 1 << (7+decay_booster);
-		this->magnitude0 -= (int32_t(this->magnitude0) * falloff0) >> (8+decay_booster);
-		this->magnitude1 -= (int32_t(this->magnitude1) * falloff1) >> (8+decay_booster);
-		return ret;
-	}
-};
 
 class DrumDecoder
 {
 	AdpcmDecoder adpcmDecoder;
-	int8_t bass_val_original;
-	int16_t bass_val_filtered;
+
+	int8_t bass_val;
+	int16_t bass_filter;
+
+	uint16_t treble_amplitude;
+	uint16_t treble_falloff;
 public:
 
 	void trigger(const DrumExp& drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
-		bass_val_original = adpcmDecoder.get();
-		bass_val_filtered = bass_val_original << 8;
+		bass_val = adpcmDecoder.get();
+		bass_filter = 0;
+		treble_amplitude = drum.treble_env.amplitude;
+		treble_falloff = drum.treble_env.falloff;
 	}
 
 	void decodeBlock(int16_t* dest)
 	{
-		if (adpcmDecoder.isActive()) {
-			int8_t bass_val_original_prev = this->bass_val_original;
-			#ifdef DUSTEFILTER1
-			this->bass_val_original = (this->bass_val_original>>1) + (adpcmDecoder.get()>>1);
-			#else
-			this->bass_val_original = adpcmDecoder.get();
-			#endif
-			int16_t bass_delta = int16_t(this->bass_val_original - bass_val_original_prev) << (8-3);
-			int16_t bass_val = int16_t(bass_val_original_prev) << 8;
+		for (int i=0; i<block_size; i++) {
+			dest[i] = 0;
+		}
 
+		// bass
+		if (adpcmDecoder.isActive()) {
+			int8_t bass_first = this->bass_val;
+			this->bass_val = adpcmDecoder.get();
+			int8_t bass_last = this->bass_val;
+
+			int16_t bass_inter = int16_t(bass_first) << 8;
+			int16_t bass_delta = int16_t(bass_last - bass_first) << (8-3);
 			for (int i=0; i<block_size; i++) {
-				dest[i] = bass_val_filtered;
-				bass_val += bass_delta;
-				bass_val_filtered = (bass_val_filtered>>1) + (bass_val>>1);
+				bass_filter = (bass_filter>>1) + (bass_inter>>1);
+				bass_inter += bass_delta;
+				dest[i] += bass_filter;
 			}
-		} else {
+		}
+
+		// treble
+		{
+			uint16_t treble_first = this->treble_amplitude;
+			this->treble_amplitude = (uint32_t(this->treble_amplitude) * uint32_t(uint16_t(-1 - this->treble_falloff))) >> 16;
+			uint16_t treble_last = this->treble_amplitude;
+
+			uint16_t treble_inter = treble_first;
+			int16_t  treble_delta = int16_t(treble_last - treble_first) >> 3;
 			for (int i=0; i<block_size; i++) {
-				dest[i] = 0;
-			}
+				treble_inter += treble_delta;
+				int16_t noiz = int16_t(rand() | (rand() << 8));
+				noiz = int32_t(int32_t(noiz) * int32_t(treble_inter>>6)) >> 8;
+				dest[i] += noiz;
+			}			
 		}
 	}
 };
