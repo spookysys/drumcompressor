@@ -1,12 +1,8 @@
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <cstdint>
 #include <math.h>
 #include <array>
-#include <algorithm>
 #include "export/use_all.inc"
 //#define USE_JK_BD_02
 //#define USE_JK_BD_06
@@ -18,40 +14,41 @@ static const int vol_shr = 2;
 
 using namespace std;
 
-struct DrumExpEnv
-{
-	uint16_t amplitude;
-	uint16_t falloff;
-};
-
-struct DrumExpFilter
-{
-	int8_t a2, a3, b1, b2, b3;
-};
-
 struct AdpcmSample
 {
 	uint16_t len;
 	const uint8_t* data;
 };
 
-struct DrumExp
-{
-	DrumExpEnv treble_env;
-	DrumExpFilter treble_filter;
-	AdpcmSample bass_sample;
-};
 
 
 namespace drums
 {
+	struct DrumEnv
+	{
+		uint16_t amplitude;
+		uint16_t falloff;
+	};
+
+	struct DrumFilter
+	{
+		int8_t a2, a3, b1, b2, b3;
+	};
+
+	struct Drum
+	{
+		DrumEnv treble_env;
+		DrumFilter treble_filter;
+		AdpcmSample bass_sample;
+	};
+
 	enum Drums
 	{
 		#include "export/enums.inc"
 	};
 
 	#include "export/datas.inc"
-	DrumExp drums[] = {
+	const Drum drums[] = {
 		#include "export/structs.inc"
 	};
 	const char* names[] = {
@@ -92,8 +89,13 @@ public:
 
 	void trigger(const AdpcmSample& sample)
 	{
-		this->ptr = sample.data + 1;
-		this->end = sample.data + sample.len + 1;
+		if (sample.data) {
+			this->ptr = sample.data + 1;
+			this->end = sample.data + sample.len + 1;
+		} else {
+			this->ptr = nullptr;
+			this->end = nullptr;
+		}
 		if (isActive()) {
 			this->word = *sample.data;
 			this->subidx = 4;
@@ -138,7 +140,7 @@ class Filter
 	float xn1, xn2;
 	float yn1, yn2;
 public:
-	void init(const DrumExpFilter& op) 
+	void init(const drums::DrumFilter& op) 
 	{
 		a2 = op.a2 / 64.f;
 		a3 = op.a3 / 128.f;
@@ -177,10 +179,10 @@ class DrumDecoder
 	Filter treble_filter;
 public:
 
-	void trigger(const DrumExp& drum)
+	void trigger(const drums::Drum& drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
-		bass_val = adpcmDecoder.get();
+		if (adpcmDecoder.isActive()) bass_val = adpcmDecoder.get();
 		bass_filtered = 0;
 		treble_amplitude = drum.treble_env.amplitude;
 		treble_falloff = drum.treble_env.falloff;
@@ -202,7 +204,7 @@ public:
 			int16_t bass_inter = int16_t(bass_first) << 8;
 			int16_t bass_delta = int16_t(bass_last - bass_first) << (8-3);
 			for (int i=0; i<block_size; i++) {
-				bass_filtered = (bass_filtered>>1) + (bass_inter>>1);
+				bass_filtered = ((bass_filtered+(rand()&1))>>1) + ((bass_inter+(rand()&1))>>1);
 				bass_inter += bass_delta;
 				int16_t val = bass_filtered >> vol_shr;
 				dest[i] += val;
@@ -255,11 +257,10 @@ struct WavHeader
 };
 
 
+static WavHeader wav_header;
 void write_wav(const char* filename, int16_t* data, int num_samples, bool only_8=false)
 {
 	const int bytes_per_frame = only_8 ? 1 : 2;
-	const int wavheader_size = sizeof(WavHeader);
-	static WavHeader wav_header;
 	wav_header.chunk_size = bytes_per_frame * num_samples + 36;
 	wav_header.subchunk2_size = bytes_per_frame * num_samples - 8;
 	wav_header.bytes_per_second = bytes_per_frame * wav_header.sample_rate;
@@ -268,7 +269,7 @@ void write_wav(const char* filename, int16_t* data, int num_samples, bool only_8
 	FILE* fid = fopen(filename, "wb");
 	fwrite(&wav_header, 1, sizeof(WavHeader), fid);
 	if (only_8) {
-		int8_t wdata[num_samples];
+		int8_t* wdata = (int8_t*)malloc(num_samples);
 		for (int i=0; i<num_samples; i++) {
 			int16_t val = data[i];
 			int limit = 1<<(8-vol_shr);
@@ -280,14 +281,15 @@ void write_wav(const char* filename, int16_t* data, int num_samples, bool only_8
 			if (val>255) val = 255;
 			wdata[i] = val;
 		}
-		fwrite(wdata, bytes_per_frame, num_samples, fid);
+		fwrite(wdata, 1, num_samples, fid);
+		free(wdata);
 	} else {
-		fwrite(data, bytes_per_frame, num_samples, fid);
+		fwrite(data, 2, num_samples, fid);
 	}
 	fclose(fid);
 }
 
-void write_dat(const char* filename, const DrumExp& op)
+void write_dat(const char* filename, const drums::Drum& op)
 {
 	uint16_t bass_data_ptr_placeholder = 0;
 	FILE* fid = fopen(filename, "wb");
@@ -307,12 +309,12 @@ int main(int argc, char* argv[])
 
 	DrumDecoder decoder;
 	for (int drum_i=0; drum_i<drums::num; drum_i++) {
-		const DrumExp& drum = drums::drums[drum_i];
+		const drums::Drum& drum = drums::drums[drum_i];
 		const char* name = drums::names[drum_i];
 		decoder.trigger(drum);
 		for (int block_i=0; block_i<num_blocks; block_i++) {
 			std::array<int16_t, block_size> block_buffer;
-			decoder.decodeBlock(block_buffer.data());
+			decoder.decodeBlock(block_buffer);
 			for (int i=0; i<block_size; i++) {
 				int16_t val = block_buffer[i];
 				val = val * (32760. / 32768.);
@@ -331,7 +333,7 @@ int main(int argc, char* argv[])
 			d[2] = 'a';
 			d[3] = 'v';
 			d[4] = '\0';
-			write_wav(filename, buffer.data(), buffer.size(), true);
+			write_wav(filename, buffer, num_blocks*block_size, true);
 			d[0] = '.';
 			d[1] = 'd';
 			d[2] = 'a';
@@ -341,3 +343,13 @@ int main(int argc, char* argv[])
 		}
 	}
 }
+
+#ifdef CRINKLE
+#define WINDOWS_LEAN_AND_MEAN
+#include <windows.h>
+extern "C" void __stdcall mainCRTStartup()
+{
+	main(0, nullptr);
+	ExitProcess(0);
+}
+#endif

@@ -1,5 +1,5 @@
 function export(wav_filename, bass_data, treble_b, treble_a, treble_env_fit)
-    [data_fid, struct_fid, name] = start(wav_filename);
+    [data_fid, struct_fid, name] = start(wav_filename, ~isempty(bass_data));
     
     % output bass data
     export_bass_data(data_fid, bass_data);
@@ -76,7 +76,7 @@ function export_filter(fid, b, a)
     fprintf(fid, '{ %d, %d, %d, %d, %d }, // treble filter\n' , tmp(2), tmp(3), tmp(4), tmp(5), tmp(6));
 end
 
-function [data_fid, struct_fid, name] = start(wav_filename)
+function [data_fid, struct_fid, name] = start(wav_filename, has_bass_data)
      [~,~,~] = mkdir(fullfile('export', 'data'));
      [~,~,~] = mkdir(fullfile('export', 'struct'));
      [~, name, ~] = fileparts(wav_filename);
@@ -95,9 +95,13 @@ function [data_fid, struct_fid, name] = start(wav_filename)
      
      fid = fopen(fullfile('export', 'datas.inc'), 'a');
      fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
-     fprintf(fid, [ 'const unsigned char ' name '_data[] = {\n']);
-     fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
-     fprintf(fid, [ '};\n']);
+     if has_bass_data
+         fprintf(fid, [ 'const unsigned char ' name '_data[] = {\n']);
+         fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
+         fprintf(fid, [ '};\n']);
+     else
+         fprintf(fid, [ 'static const unsigned char* ' name '_data = nullptr;\n']);
+     end
      fprintf(fid, [ '#endif\n']);
      fclose(fid);
      clear fid;     

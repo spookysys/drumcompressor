@@ -7,3 +7,4 @@ out_check/*
 export*/*
 *.exe
 *.dat
+*.obj
