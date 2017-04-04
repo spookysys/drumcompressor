@@ -13,6 +13,8 @@
 
 static const int block_size = 8;
 static const int sample_rate = 22050;
+static const int vol_shr = 2;
+
 
 using namespace std;
 
@@ -29,7 +31,6 @@ struct DrumExpFilter
 
 struct AdpcmSample
 {
-	std::array<int8_t, 4> palette;
 	uint16_t len;
 	const uint8_t* data;
 };
@@ -62,7 +63,6 @@ namespace drums
 
 class AdpcmDecoder
 {
-	array<int8_t, 4> palette;
 	const uint8_t* ptr;
 	const uint8_t* end;
 	uint8_t subidx;
@@ -83,6 +83,7 @@ class AdpcmDecoder
 
 	int8_t recon_1;
 	int8_t recon_2;
+	int8_t modifier;
 public:
 	void reset()
 	{
@@ -91,7 +92,6 @@ public:
 
 	void trigger(const AdpcmSample& sample)
 	{
-		this->palette = sample.palette;
 		this->ptr = sample.data + 1;
 		this->end = sample.data + sample.len + 1;
 		if (isActive()) {
@@ -100,6 +100,7 @@ public:
 		}
 		this->recon_1 = 0;
 		this->recon_2 = 0;
+		this->modifier = 0;
 	}
 
 	bool isActive()
@@ -110,14 +111,20 @@ public:
 	int8_t get()
 	{
 		uint8_t idx = getIdx();
-		int8_t palette_val = palette[idx];
-		int8_t prediction = recon_1 + recon_1 - recon_2;
-		int8_t recon = prediction; 
-		if (recon_1 < 0) {
-			recon -= palette_val;
-		} else {
-			recon += palette_val;
+		switch (idx) {
+			case 0: break;
+			case 1: 
+				modifier = -modifier;
+				break;
+			case 2: 
+				modifier = modifier ? (modifier<<1) : 1;
+				break;
+			case 3:
+				modifier = modifier ? (modifier>>1) : -1;
+				break;
 		}
+		int8_t prediction = recon_1 + recon_1 - recon_2;
+		int8_t recon = prediction + modifier;
 		this->recon_2 = this->recon_1;
 		this->recon_1 = recon;
 		return recon;
@@ -197,7 +204,7 @@ public:
 			for (int i=0; i<block_size; i++) {
 				bass_filtered = (bass_filtered>>1) + (bass_inter>>1);
 				bass_inter += bass_delta;
-				int16_t val = bass_filtered >> 2; // volume
+				int16_t val = bass_filtered >> vol_shr;
 				dest[i] += val;
 			}
 		}
@@ -210,7 +217,7 @@ public:
 			for (int i=0; i<block_size; i++) {
 				int32_t noiz = int16_t(rand() | (rand() << 8));
 				noiz = int32_t(noiz * amplitude) >> 8;
-				noiz >>= 2; // volume
+				noiz >>= vol_shr;
 				int16_t val = treble_filter.get(noiz);
 				dest[i] += val;
 			}			
@@ -237,9 +244,9 @@ struct WavHeader
 	uint16_t audio_format = 1; // 1 = PCM
 	uint16_t num_channels = 1;
 	uint32_t sample_rate = 22050; 
-	uint32_t bytes_per_second = 2*22050;
-	uint16_t bytes_per_frame = 2;
-	uint16_t bits_per_sample = 16;
+	uint32_t bytes_per_second = 0;
+	uint16_t bytes_per_frame = 0;
+	uint16_t bits_per_sample = 0;
 	char subchunk2_id_0 = 'd';
 	char subchunk2_id_1 = 'a';
 	char subchunk2_id_2 = 't';
@@ -248,15 +255,47 @@ struct WavHeader
 };
 
 
-void write_wav(const char* filename, int16_t* data, int num_samples)
+void write_wav(const char* filename, int16_t* data, int num_samples, bool only_8=false)
 {
+	const int bytes_per_frame = only_8 ? 1 : 2;
 	const int wavheader_size = sizeof(WavHeader);
 	static WavHeader wav_header;
-	wav_header.chunk_size = 2*num_samples + 36;//sizeof(WavHeader)-8;
-	wav_header.subchunk2_size = 2*num_samples - 8;
+	wav_header.chunk_size = bytes_per_frame * num_samples + 36;
+	wav_header.subchunk2_size = bytes_per_frame * num_samples - 8;
+	wav_header.bytes_per_second = bytes_per_frame * wav_header.sample_rate;
+	wav_header.bytes_per_frame = bytes_per_frame;
+	wav_header.bits_per_sample = bytes_per_frame * 8;
 	FILE* fid = fopen(filename, "wb");
 	fwrite(&wav_header, 1, sizeof(WavHeader), fid);
-	fwrite(data, 2, num_samples, fid);
+	if (only_8) {
+		int8_t wdata[num_samples];
+		for (int i=0; i<num_samples; i++) {
+			int16_t val = data[i];
+			int limit = 1<<(8-vol_shr);
+			int dither = rand() % limit;
+			val += dither;
+			val >>= (8-vol_shr);
+			val += 128;
+			if (val<0) val = 0;
+			if (val>255) val = 255;
+			wdata[i] = val;
+		}
+		fwrite(wdata, bytes_per_frame, num_samples, fid);
+	} else {
+		fwrite(data, bytes_per_frame, num_samples, fid);
+	}
+	fclose(fid);
+}
+
+void write_dat(const char* filename, const DrumExp& op)
+{
+	uint16_t bass_data_ptr_placeholder = 0;
+	FILE* fid = fopen(filename, "wb");
+	fwrite(&op.treble_env, sizeof(op.treble_env), 1, fid);
+	fwrite(&op.treble_filter, sizeof(op.treble_filter), 1, fid);
+	fwrite(&op.bass_sample.len, sizeof(op.bass_sample.len), 1, fid);
+	fwrite(&bass_data_ptr_placeholder, sizeof(bass_data_ptr_placeholder), 1, fid);
+	fwrite(op.bass_sample.data, 1, op.bass_sample.len, fid);
 	fclose(fid);
 }
 
@@ -292,7 +331,13 @@ int main(int argc, char* argv[])
 			d[2] = 'a';
 			d[3] = 'v';
 			d[4] = '\0';
-			write_wav(filename, buffer.data(), buffer.size());
+			write_wav(filename, buffer.data(), buffer.size(), true);
+			d[0] = '.';
+			d[1] = 'd';
+			d[2] = 'a';
+			d[3] = 't';
+			d[4] = '\0';
+			write_dat(filename, drum);
 		}
 	}
 }

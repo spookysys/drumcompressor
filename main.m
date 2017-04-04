@@ -29,7 +29,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
         
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
-    size1 = 4 + 6 + 2 + 4; % treble_env, treble_filter, bass_length, palette
+    size1 = 4 + 6 + 2; % treble_env, treble_filter, bass_length
     size2 = length(bass) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
     fprintf(fid, [ 'Original length: ' num2str(orig_len) '\r\n']);
@@ -51,12 +51,12 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
         save_output([checkdir 'bass_cut.wav'], resample(bass, block_size, 1), sample_rate);
     end
     
-    [bass_adpcm_data, bass_adpcm_palette] = compress_adpcm(bass*128, adpcm_weights, adpcm_bits, 8);
+    [bass_adpcm_data] = compress_adpcm(bass*128);
     clear volume_adj;
     clear adpcm_weights;
     
     % Reconstruct bass
-    bass_recon = decompress_adpcm(bass_adpcm_data, bass_adpcm_palette);
+    bass_recon = decompress_adpcm(bass_adpcm_data);
     if (~isempty(bass_recon))
         save_output([checkdir 'bass_recon.wav'], resample(bass_recon/128, block_size, 1), sample_rate);
         bass_recon_upsampled = resample(bass_recon, block_size, 1);
@@ -90,7 +90,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     save_output(outfile, mix_long / 128, sample_rate);
     
     % Export to C
-    export(infile, bass_adpcm_data, bass_adpcm_palette, treble_color_b, treble_color_a, treble_env_fit);
+    export(infile, bass_adpcm_data, treble_color_b, treble_color_a, treble_env_fit);
 end
 
 
@@ -197,7 +197,7 @@ function [bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byt
     clear env;
     
     % clear samples after volume drops too low
-    limit = 8. / 2^8;
+    limit = 10. / 2^8; % 10 is good value
     cut_point = 0;
     for i = 1:length(bass)
         vol_real = env_smooth(i);
@@ -212,20 +212,39 @@ end
 
 
 
+function [new_modifier] = get_modifier(last_modifier, index)
+    if index==1
+        new_modifier = last_modifier;
+    elseif index==2
+        new_modifier = -last_modifier;
+    elseif index==3
+        if last_modifier==0
+            new_modifier = 1;
+        else
+            new_modifier = last_modifier * 2;
+        end
+    elseif index==4
+        if last_modifier==0
+            new_modifier = -1;
+        else
+            new_modifier = round(last_modifier / 2);
+        end
+    else
+        assert(false);
+    end
+end
 
-function data_out = decompress_adpcm(data_in, palette)
+
+function data_out = decompress_adpcm(data_in)
     data_out = zeros(length(data_in), 1);
     recon_1 = 0;
     recon_2 = 0;
+    modifier = 0;
     for i = 1:length(data_in)
         index = data_in(i);
-        palette_val = palette(index);
         prediction = recon_1 + recon_1 - recon_2;
-        if (recon_1 < 0)
-            recon = wrap8(prediction - palette_val);
-        else
-            recon = wrap8(prediction + palette_val);
-        end
+        modifier = wrap8(get_modifier(modifier, index));
+        recon = wrap8(prediction + modifier);
         data_out(i) = recon;
         recon_2 = recon_1;
         recon_1 = recon;

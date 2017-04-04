@@ -2,93 +2,86 @@
 
 
 
-function [indices, palette] = compress_adpcm(data_in, weights, bits_per_sample, bitdepth)
-    if (length(data_in)==0)
+function [indices] = compress_adpcm(data_in)
+    if (isempty(data_in))
         indices = [];
-        palette = [];
     else
-        % Determine optimal palette
-        palette = [0 0 0 0];
-        error = Inf;
-        iteration = 0;
-        for i = 1:200
-            [error, iteration, palette] = optimize_palette(error, iteration, data_in, weights, palette, 2);
-        end
-        
         % output the thing
         disp('Compressing');
-        [error, indices] = compress_with_palette(data_in, weights, palette, 5);
-        disp(['Final error: ', num2str(error), ' Palette: ', num2str(palette)]);
+        [error, indices] = compress(data_in, 5);
+        disp(['Final error: ', num2str(error)]);
         disp('Done');
     end
 end
 
 
 
-
-% run test compressions to try to optimize palette
-function [error, iteration, palette] = optimize_palette(error, iteration, data_in, weights, palette, lookahead)
-    test_palette = palette;
-    while test_palette == palette
-        diff = [5 1 1 5] .* datasample([0 1], length(palette)) .* randn(1, length(palette));
-        test_palette = palette + round(diff);
-    end
-    [test_error, ~] = compress_with_palette(data_in, weights, test_palette, lookahead);
-    if (test_error <= error)
-        palette = test_palette;
-        error = test_error;
-        disp(['Iteration ' num2str(iteration) ' Error: ', num2str(error), ' Palette: ', num2str(palette)]);
-    end
-    iteration = iteration + 1;
-end
-
-
 % Run a simplified (for now) compression and return data
-function [avg_error, data_out] = compress_with_palette(data_in, weights, palette, lookahead)
+function [avg_error, data_out] = compress(data_in, lookahead)
     data_out = zeros(length(data_in), 1);
     recon_1 = 0;
     recon_2 = 0;
+    modifier = 0;
     total_error = 0;
     for i = 1:length(data_in)
-        [local_error, ~, recon, index] = compress_with_palette_step(data_in, weights, palette, i, recon_1, recon_2, lookahead);
+        [local_error, ~, recon, index, modifier] = compress_step(data_in, i, modifier, recon_1, recon_2, lookahead);
         total_error = total_error + local_error;
         data_out(i) = index;
         recon_2 = recon_1;
         recon_1 = recon;
     end
-    avg_error = total_error / sum(weights);
+    avg_error = total_error / length(data_in);
 end
 
+function [new_modifier] = get_modifier(last_modifier, index)
+    if index==1
+        new_modifier = last_modifier;
+    elseif index==2
+        new_modifier = -last_modifier;
+    elseif index==3
+        if last_modifier==0
+            new_modifier = 1;
+        else
+            new_modifier = last_modifier * 2;
+        end
+    elseif index==4
+        if last_modifier==0
+            new_modifier = -1;
+        else
+            new_modifier = round(last_modifier / 2);
+        end
+    else
+        assert(false);
+    end
+end
 
-function [local_error, total_error, recon, index] = compress_with_palette_step(data_in, weights, palette, pos, recon_1, recon_2, lookahead)
+function [local_error, total_error, recon, index, modifier] = compress_step(data_in, pos, last_modifier, recon_1, recon_2, lookahead)
     val = round(data_in(pos));
     prediction = recon_1 + recon_1 - recon_2;
-    if (recon_1 < 0)
-        recon_opts = wrap8(prediction - palette);
-    else
-        recon_opts = wrap8(prediction + palette);
-    end
-    local_error_opts = abs(recon_opts - val) * weights(pos);
-    if lookahead>0 && pos<length(data_in)
-        tail_error_opts = zeros(1, length(palette));
-        for i = 1:length(palette)
-            recon = recon_opts(i);
-            [~, tail_error, ~, ~] = compress_with_palette_step(data_in, weights, palette, pos+1, recon, recon_1, lookahead-1);
-            tail_error_opts(i) = tail_error;
+    local_error_opts = [0 0 0 0];
+    total_error_opts = [0 0 0 0];
+    recon_opts = [0 0 0 0];
+    modifier_opts = [0 0 0 0];
+    for index = 1:4
+        modifier = wrap8(get_modifier(last_modifier, index));
+        recon = wrap8(prediction + modifier);
+        if lookahead > 0 && pos < length(data_in)
+            [~, tail_error, ~, ~] = compress_step(data_in, pos+1, modifier, recon, recon_1, lookahead-1);
+        else
+            tail_error = 0;
         end
-        total_error_opts = local_error_opts + tail_error_opts;
-    else
-        total_error_opts = local_error_opts;
+        local_error = abs(recon - val);
+        local_error_opts(index) = local_error;
+        total_error_opts(index) = tail_error + local_error;
+        recon_opts(index) = recon;
+        modifier_opts(index) = modifier;
     end
     [total_error, index] = min(total_error_opts);
-    recon = recon_opts(index);
     local_error = local_error_opts(index);
+    modifier = modifier_opts(index);
+    recon = recon_opts(index);
 end
 
-
-function [val] = clamp8(val)
-    val = double(int8(val));
-end
 
 function [val] = wrap8(val)
     val = mod(val+128, 256) - 128;
