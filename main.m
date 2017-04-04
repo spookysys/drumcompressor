@@ -205,10 +205,8 @@ function [bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byt
             cut_point = i;
         end
     end
-    cut_point = ceil(cut_point/samples_per_byte)*samples_per_byte;
-
-    % chop the signal
-    bass = pad_to(bass, cut_point, 0);
+    bass = bass(1:cut_point);
+    bass = pad(bass, samples_per_byte);
 end
 
 

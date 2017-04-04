@@ -169,16 +169,12 @@ public:
 
 		// treble
 		{
-			uint16_t treble_first = this->treble_amplitude;
+			uint16_t amplitude = this->treble_amplitude >> 6;
 			this->treble_amplitude = (uint32_t(this->treble_amplitude) * uint32_t(uint16_t(-1 - this->treble_falloff))) >> 16;
-			uint16_t treble_last = this->treble_amplitude;
 
-			uint16_t treble_inter = treble_first;
-			int16_t  treble_delta = int16_t(treble_last - treble_first) >> 3;
 			for (int i=0; i<block_size; i++) {
-				treble_inter += treble_delta;
-				int16_t noiz = int16_t(rand() | (rand() << 8));
-				noiz = int32_t(int32_t(noiz) * int32_t(treble_inter>>6)) >> 8;
+				int32_t noiz = int16_t(rand() | (rand() << 8));
+				noiz = int32_t(noiz * amplitude) >> 8;
 				dest[i] += noiz;
 			}			
 		}
@@ -220,7 +216,7 @@ void write_wav(const char* filename, int16_t* data, int num_samples)
 	const int wavheader_size = sizeof(WavHeader);
 	static WavHeader wav_header;
 	wav_header.chunk_size = 2*num_samples + 36;//sizeof(WavHeader)-8;
-	wav_header.subchunk2_size = 2*num_samples;
+	wav_header.subchunk2_size = 2*num_samples - 8;
 	FILE* fid = fopen(filename, "wb");
 	fwrite(&wav_header, 1, sizeof(WavHeader), fid);
 	fwrite(data, 2, num_samples, fid);
