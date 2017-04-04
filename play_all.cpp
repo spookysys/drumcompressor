@@ -125,25 +125,59 @@ public:
 
 };
 
+class Filter
+{
+	float a2, a3, b1, b2, b3;
+	float xn1, xn2;
+	float yn1, yn2;
+public:
+	void init(const DrumExpFilter& op) 
+	{
+		a2 = op.a2 / 64.f;
+		a3 = op.a3 / 128.f;
+		b1 = op.b1 / 256.f;
+		b2 = op.b2 / 256.f;
+		b3 = op.b3 / 128.f;
+		xn1 = 0;
+		yn1 = 0;
+		xn2 = 0;
+		yn2 = 0;
+	}
+	int16_t get(int16_t op)
+	{
+		float xn = op;
+
+		float yn = b1*xn + b2*xn1 + b3*xn2 - a2*yn1 - a3*yn2;
+
+		this->xn2 = this->xn1;
+		this->yn2 = this->yn1;
+		this->xn1 = xn;
+		this->yn1 = yn;
+
+		return yn;
+	}
+};
 
 class DrumDecoder
 {
 	AdpcmDecoder adpcmDecoder;
 
 	int8_t bass_val;
-	int16_t bass_filter;
+	int16_t bass_filtered;
 
 	uint16_t treble_amplitude;
 	uint16_t treble_falloff;
+	Filter treble_filter;
 public:
 
 	void trigger(const DrumExp& drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
 		bass_val = adpcmDecoder.get();
-		bass_filter = 0;
+		bass_filtered = 0;
 		treble_amplitude = drum.treble_env.amplitude;
 		treble_falloff = drum.treble_env.falloff;
+		treble_filter.init(drum.treble_filter);
 	}
 
 	void decodeBlock(int16_t* dest)
@@ -161,9 +195,10 @@ public:
 			int16_t bass_inter = int16_t(bass_first) << 8;
 			int16_t bass_delta = int16_t(bass_last - bass_first) << (8-3);
 			for (int i=0; i<block_size; i++) {
-				bass_filter = (bass_filter>>1) + (bass_inter>>1);
+				bass_filtered = (bass_filtered>>1) + (bass_inter>>1);
 				bass_inter += bass_delta;
-				dest[i] += bass_filter;
+				int16_t val = bass_filtered >> 2; // volume
+				dest[i] += val;
 			}
 		}
 
@@ -175,7 +210,9 @@ public:
 			for (int i=0; i<block_size; i++) {
 				int32_t noiz = int16_t(rand() | (rand() << 8));
 				noiz = int32_t(noiz * amplitude) >> 8;
-				dest[i] += noiz;
+				noiz >>= 2; // volume
+				int16_t val = treble_filter.get(noiz);
+				dest[i] += val;
 			}			
 		}
 	}
