@@ -25,7 +25,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
 
     orig_len = length(data_in);
     short_len = max(ceil(treble_cut_point/block_size)*block_size, length(bass)*block_size);
-    %long_len = orig_len + min(ceil(orig_len/2), ceil(sample_rate/2));
+    long_len = orig_len + min(ceil(orig_len/2), ceil(sample_rate/2));
         
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
@@ -35,8 +35,8 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     fprintf(fid, [ 'Original length: ' num2str(orig_len) '\r\n']);
     fprintf(fid, [ 'Treble length: ' num2str(treble_cut_point) '\r\n']);
     fprintf(fid, [ 'Bass length: ' num2str(length(bass)*block_size) '\r\n']);
-    fprintf(fid, [ 'Length: ' num2str(short_len) '\r\n']);
-    %fprintf(fid, [ 'Elongated length: ' num2str(long_len) '\r\n']);
+    fprintf(fid, [ 'Cropped length: ' num2str(short_len) '\r\n']);
+    fprintf(fid, [ 'Elongated length: ' num2str(long_len) '\r\n']);
     fprintf(fid, [ 'Final Size: ' num2str(size1) ' + ' num2str(size2) ' = ' num2str(size) '\r\n']);
     fprintf(fid, [ 'Kbps: ' num2str(size*8 / (orig_len/sample_rate) / 1024) '\r\n']);
     fprintf(fid, [ 'Compression Ratio: ' num2str(orig_len/size) '\r\n']);
@@ -76,19 +76,18 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     
     % Make short mix
     treble_recon_short = reconstruct_treble(short_len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
-    treble_recon_short = treble_recon_short(1:treble_cut_point);
-    mix_short = pad_to(bass_recon_upsampled, short_len, 0) + pad_to(treble_recon_short, short_len, 0);
+    mix_short = pad_to(bass_recon_upsampled, short_len, 0) + treble_recon_short;
     save_output([checkdir 'treble_recon_short.wav'], treble_recon_short / 128, sample_rate);
     save_output([checkdir 'result_short.wav'], mix_short / 128, sample_rate);
 
     % Make long mix
-%    treble_recon_long = reconstruct_treble(long_len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
-%    mix_long = pad_to(bass_recon_upsampled, long_len, 0) + treble_recon_long;
-%    save_output([checkdir 'treble_recon_long.wav'], treble_recon_long / 128, sample_rate);
-%    save_output([checkdir 'result_long.wav'], mix_long / 128, sample_rate);
+    treble_recon_long = reconstruct_treble(long_len, treble_env_fit, treble_color_b, treble_color_a, checkdir, sample_rate);
+    mix_long = pad_to(bass_recon_upsampled, long_len, 0) + treble_recon_long;
+    save_output([checkdir 'treble_recon_long.wav'], treble_recon_long / 128, sample_rate);
+    save_output([checkdir 'result_long.wav'], mix_long / 128, sample_rate);
 
     % This is the final mix
-    save_output(outfile, mix_short / 128, sample_rate);
+    save_output(outfile, mix_long / 128, sample_rate);
     
     % Export to C
     export(infile, bass_adpcm_data, treble_color_b, treble_color_a, treble_env_fit);
@@ -118,12 +117,11 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     % Separate treble
 	[sep_b, sep_a] = butter(6, separation_freq / nyquist, 'high');
 	treble = filter(sep_b, sep_a, data_in);
-    %treble = pad_to(treble, ceil(length(treble)*1.5), 0);
     save_output([checkdir 'treble.wav'], treble, sample_rate);
 
 	% Find volume envelopes
     env = get_env(treble);
-    env_fit = fit((0:length(treble)-1)', env, 'poly2');
+    env_fit = fit((0:length(treble)-1)', env, 'exp1', my_fitoptions());
     env_smooth = smooth(env, smooth_window);
 
     % find where volume drops below 1/256
@@ -167,15 +165,14 @@ function [env_fit, color_b, color_a, cut_point] = analyze_treble(data_in, sample
     % Adjust envelope so volume is correct in the end
     treble_norm = treble ./ env_smooth;
     volume_adj = (128 / mean(abs(hilbert(colored)))) * mean(abs(hilbert(treble_norm)));
-    env_fit.p1 = env_fit.p1 * volume_adj;
-    env_fit.p2 = env_fit.p2 * volume_adj;
-    env_fit.p3 = env_fit.p3 * volume_adj;
+    env_fit.a = env_fit.a * volume_adj;
+    %env_fit.c = env_fit.c * volume_adj;
 end
 
-%function ret = my_fitoptions()
-    %ac_limit = 2;
-    %ret = fitoptions('exp1','upper',[ac_limit 0],'lower',[-ac_limit -Inf]);
-%end
+function ret = my_fitoptions()
+    ac_limit = 2;
+    ret = fitoptions('exp1','upper',[ac_limit 0],'lower',[-ac_limit -Inf]);
+end
 
 function [env] = get_env(data_in)
     padding = 1000;
