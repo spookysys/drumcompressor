@@ -26,8 +26,8 @@ namespace drums
 {
 	struct DrumEnv
 	{
-		uint16_t amplitude;
-		uint16_t falloff;
+		uint16_t increment;
+		uint16_t initial;
 	};
 
 	struct DrumFilter
@@ -174,8 +174,9 @@ class DrumDecoder
 	int8_t bass_val;
 	int16_t bass_filtered;
 
-	uint16_t treble_amplitude;
-	uint16_t treble_falloff;
+	int32_t treble_amplitude;
+	uint16_t treble_increment;
+
 	Filter treble_filter;
 public:
 
@@ -184,8 +185,8 @@ public:
 		adpcmDecoder.trigger(drum.bass_sample);
 		if (adpcmDecoder.isActive()) bass_val = adpcmDecoder.get();
 		bass_filtered = 0;
-		treble_amplitude = drum.treble_env.amplitude;
-		treble_falloff = drum.treble_env.falloff;
+		treble_amplitude = uint32_t(drum.treble_env.initial) << 8;
+		treble_increment = drum.treble_env.increment;
 		treble_filter.init(drum.treble_filter);
 	}
 
@@ -206,15 +207,13 @@ public:
 			for (int i=0; i<block_size; i++) {
 				bass_filtered = ((bass_filtered+(rand()&1))>>1) + ((bass_inter+(rand()&1))>>1);
 				bass_inter += bass_delta;
-				int16_t val = bass_filtered >> vol_shr;
-				dest[i] += val;
+				dest[i] += bass_filtered >> vol_shr;
 			}
 		}
 
 		// treble
-		{
-			uint16_t amplitude = this->treble_amplitude >> 6;
-			this->treble_amplitude = (uint32_t(this->treble_amplitude) * uint32_t(uint16_t(-1 - this->treble_falloff))) >> 16;
+		if (this->treble_amplitude > 0) {
+			uint16_t amplitude = this->treble_amplitude >> 8;
 
 			for (int i=0; i<block_size; i++) {
 				int32_t noiz = int16_t(rand() | (rand() << 8));
@@ -223,6 +222,8 @@ public:
 				int16_t val = treble_filter.get(noiz);
 				dest[i] += val;
 			}			
+
+			this->treble_amplitude -= this->treble_increment;
 		}
 	}
 };
@@ -314,7 +315,7 @@ int main(int argc, char* argv[])
 		decoder.trigger(drum);
 		for (int block_i=0; block_i<num_blocks; block_i++) {
 			std::array<int16_t, block_size> block_buffer;
-			decoder.decodeBlock(block_buffer);
+			decoder.decodeBlock(block_buffer.data());
 			for (int i=0; i<block_size; i++) {
 				int16_t val = block_buffer[i];
 				val = val * (32760. / 32768.);
@@ -333,7 +334,7 @@ int main(int argc, char* argv[])
 			d[2] = 'a';
 			d[3] = 'v';
 			d[4] = '\0';
-			write_wav(filename, buffer, num_blocks*block_size, true);
+			write_wav(filename, buffer.data(), num_blocks*block_size, true);
 			d[0] = '.';
 			d[1] = 'd';
 			d[2] = 'a';

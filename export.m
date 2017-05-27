@@ -40,30 +40,17 @@ function export_bass_data(fid, bass_data)
 end
 
 function export_env(fid, env_fit, comment)
-    % a*exp(b*x)
     coeff = coeffvalues(env_fit);
     if length(coeff) ~= 2
         coeff = [0 0];
     end
     coeff(isnan(coeff)) = 0;
         
-    a = coeff(1);
-    a = a * (256*256/4);
-    a = round(a);
-    a = min(a, (256*256/4)-1);
-
-    % Rescale decay
-    b = exp(coeff(2)*8);
-    assert(b >= 0 & b <= 1);
-    b = 1 - b;
-    b = b * 256*256;
-    b = round(b);
-    assert(b >= 0);
-    b = min(b, 256*256-1);
+    digi = round(coeff .* [-2^(19) 2^(8)]);
     
     % Result
-    fprintf(fid, '// %f, %f // %s floats\n', coeff(1), coeff(2), comment);
-    fprintf(fid, '{ %d, %d }, // %s\n', a, b, comment);
+    fprintf(fid, '// %.16f, %.16f // %s floats\n', coeff(1), coeff(2), comment);
+    fprintf(fid, '{ %d, %d }, // %s\n', digi(1), digi(2), comment);
  end
 
 function export_filter(fid, b, a)
