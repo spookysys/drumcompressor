@@ -1,6 +1,8 @@
-#include <stdio.h>
-#include <stdlib.h>
 #include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
+#include <iostream>
 #include <math.h>
 #include <array>
 #include "export/use_all.inc"
@@ -134,36 +136,55 @@ public:
 
 };
 
+template<typename T>
+class MinMaxRecorder
+{
+	T maxval = 0;
+	T minval = 0;
+public:
+	void operator()(T op) {
+		minval = std::max(minval, op);
+		maxval = std::max(maxval, op);
+	}
+	void dump(const char* name)
+	{
+		std::cout << std::string(name) << " min: " << minval << " max: " << maxval << std::endl;
+	}
+};
+
 class Filter
 {
-	float a2, a3, b1, b2, b3;
-	float xn1, xn2;
-	float yn1, yn2;
+	int8_t a2, a3, b1, b2, b3;
+	int16_t xn_1, xn_2;
+	int16_t yn_1, yn_2;
 public:
 	void init(const drums::DrumFilter& op) 
 	{
-		a2 = op.a2 / 64.f;
-		a3 = op.a3 / 128.f;
-		b1 = op.b1 / 256.f;
-		b2 = op.b2 / 256.f;
-		b3 = op.b3 / 128.f;
-		xn1 = 0;
-		yn1 = 0;
-		xn2 = 0;
-		yn2 = 0;
+		a2 = op.a2;
+		a3 = op.a3;
+		b1 = op.b1;
+		b2 = op.b2;
+		b3 = op.b3;
+		xn_1 = 0;
+		yn_1 = 0;
+		xn_2 = 0;
+		yn_2 = 0;
 	}
-	int16_t get(int16_t op)
+	int16_t get(int16_t xx)
 	{
-		float xn = op;
+		int16_t b1_xx = (int16_t(b1)*xx)>>8;
+		int16_t b2_x1 = (int16_t(b2)*xn_1)>>8;
+		int16_t b3_x2 = (int16_t(b3)*xn_2)>>7;
+		int16_t a2_y1 = (int16_t(a2)*yn_1)>>6;
+		int16_t a3_y2 = (int16_t(a3)*yn_2)>>7;
+		int16_t yy = b1_xx + b2_x1 + b3_x2 - a2_y1 - a3_y2;
 
-		float yn = b1*xn + b2*xn1 + b3*xn2 - a2*yn1 - a3*yn2;
+		this->xn_2 = this->xn_1;
+		this->yn_2 = this->yn_1;
+		this->xn_1 = xx;
+		this->yn_1 = yy;
 
-		this->xn2 = this->xn1;
-		this->yn2 = this->yn1;
-		this->xn1 = xn;
-		this->yn1 = yn;
-
-		return yn;
+		return yy;
 	}
 };
 
@@ -325,21 +346,13 @@ int main(int argc, char* argv[])
 		{
 			static char filename[256];
 			char* d = filename;
-			const char* s = name;
-			do {
-				*d++ = *s++;
-			} while (*s);
-			d[0] = '.';
-			d[1] = 'w';
-			d[2] = 'a';
-			d[3] = 'v';
-			d[4] = '\0';
+			strcpy(d, "out/");
+			d += strlen(d);
+			strcpy(d, name);
+			d += strlen(d);
+			strcpy(d, ".wav");
 			write_wav(filename, buffer.data(), num_blocks*block_size, true);
-			d[0] = '.';
-			d[1] = 'd';
-			d[2] = 'a';
-			d[3] = 't';
-			d[4] = '\0';
+			strcpy(d, ".dat");
 			write_dat(filename, drum);
 		}
 	}
