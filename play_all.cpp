@@ -150,11 +150,31 @@ public:
 	}
 };
 
+static int8_t mulsu_shr8(int8_t a, uint8_t b)
+{
+	return (int16_t(a)*int16_t(b))>>8;
+}
+
+static int8_t mulss_shr8(int8_t a, int8_t b)
+{
+	return (int16_t(a)*b)>>8;
+}
+
+static int8_t mulss_shr7(int8_t a, int8_t b)
+{
+	return (int16_t(a)*b)>>7;
+}
+
+static int8_t mulss_shr6(int8_t a, int8_t b)
+{
+	return (int16_t(a)*b)>>6;
+}
+
 class Filter
 {
 	int8_t a2, a3, b1, b2, b3;
-	int16_t xn_1, xn_2;
-	int16_t yn_1, yn_2;
+	int8_t xn_1, xn_2;
+	int8_t yn_1, yn_2;
 public:
 	void init(const drums::DrumFilter& op) 
 	{
@@ -168,14 +188,14 @@ public:
 		xn_2 = 0;
 		yn_2 = 0;
 	}
-	int16_t get(int16_t xx)
+	int8_t get(int8_t xx)
 	{
-		int16_t b1_xx = (int16_t(b1)*xx)>>8;
-		int16_t b2_x1 = (int16_t(b2)*xn_1)>>8;
-		int16_t b3_x2 = (int16_t(b3)*xn_2)>>7;
-		int16_t a2_y1 = (int16_t(a2)*yn_1)>>6;
-		int16_t a3_y2 = (int16_t(a3)*yn_2)>>7;
-		int16_t yy = b1_xx + b2_x1 + b3_x2 - a2_y1 - a3_y2;
+		int8_t b1_xx = mulss_shr8(b1, xx);
+		int8_t b2_x1 = mulss_shr8(b2, xn_1);
+		int8_t b3_x2 = mulss_shr7(b3, xn_2);
+		int8_t a2_y1 = mulss_shr6(a2, yn_1);
+		int8_t a3_y2 = mulss_shr7(a3, yn_2);
+		int8_t yy = int16_t(b1_xx) + int16_t(b2_x1) + int16_t(b3_x2) - int16_t(a2_y1) - int16_t(a3_y2);
 
 		this->xn_2 = this->xn_1;
 		this->yn_2 = this->yn_1;
@@ -209,23 +229,6 @@ static void lerp8(int8_t start, int8_t end, int8_t v[8])
 }
 
 
-// lerp
-static void spline8(int8_t p0, int8_t p1, int8_t p2, int8_t v[8])
-{
-	uint8_t dither = rand();
-	int8_t l0[8];
-	int8_t l1[8];
-	lerp8(p0, p1, l0);
-	lerp8(p1, p2, l1);
-	v[0] = average(l0[0], l1[0], dither);
-	v[1] = average(l0[1], l1[1], dither);
-	v[2] = average(l0[2], l1[2], dither);
-	v[3] = average(l0[3], l1[3], dither);
-	v[4] = average(l0[4], l1[4], dither);
-	v[5] = average(l0[5], l1[5], dither);
-	v[6] = average(l0[6], l1[6], dither);
-	v[7] = average(l0[7], l1[7], dither);
-}
 
 
 class DrumDecoder
@@ -265,12 +268,12 @@ public:
 
 		// treble
 		if (this->treble_amplitude > 0) {
-			uint16_t amplitude = this->treble_amplitude >> 8;
-			if (amplitude>0xFF) amplitude = 0xFF;
+			uint8_t amplitude = (this->treble_amplitude <= 0xFFFF) ? (this->treble_amplitude>>8) : 0xFF;
+
 			for (int i=0; i<block_size; i++) {
 				int8_t noiz = rand();
-				int16_t val = treble_filter.get(noiz);
-				val = (int16_t(val) * amplitude) >> 8;
+				int8_t val = treble_filter.get(noiz);
+				val = mulsu_shr8(val, amplitude);
 				dest[i] += val;
 			}			
 
