@@ -1,6 +1,8 @@
 {
 	"files.associations": {
 		"*.map": "json",
-		"array": "cpp"
+		"array": "cpp",
+		"xiosbase": "cpp",
+		"xutility": "cpp"
 	}
 }

@@ -11,7 +11,6 @@
 
 static const int block_size = 8;
 static const int sample_rate = 22050;
-static const int vol_shr = 2;
 
 
 using namespace std;
@@ -21,7 +20,6 @@ struct AdpcmSample
 	uint16_t len;
 	const uint8_t* data;
 };
-
 
 
 namespace drums
@@ -188,12 +186,53 @@ public:
 	}
 };
 
+
+static inline int8_t average(int8_t a, int8_t b, uint8_t& dither)
+{
+	int8_t val = (int16_t(a)+int16_t(b)+(dither&1))>>1;
+	dither >>= 1;
+	return val;
+}
+
+// lerp
+static void lerp8(int8_t start, int8_t end, int8_t v[8])
+{
+	uint8_t dither = rand();
+	v[0] = start;
+	v[4] = average(v[0], end, dither);
+	v[2] = average(v[0], v[4], dither);
+	v[6] = average(v[4], end, dither);
+	v[1] = average(v[0], v[2], dither);
+	v[3] = average(v[2], v[4], dither);
+	v[5] = average(v[4], v[6], dither);
+	v[7] = average(v[6], end, dither);
+}
+
+
+// lerp
+static void spline8(int8_t p0, int8_t p1, int8_t p2, int8_t v[8])
+{
+	uint8_t dither = rand();
+	int8_t l0[8];
+	int8_t l1[8];
+	lerp8(p0, p1, l0);
+	lerp8(p1, p2, l1);
+	v[0] = average(l0[0], l1[0], dither);
+	v[1] = average(l0[1], l1[1], dither);
+	v[2] = average(l0[2], l1[2], dither);
+	v[3] = average(l0[3], l1[3], dither);
+	v[4] = average(l0[4], l1[4], dither);
+	v[5] = average(l0[5], l1[5], dither);
+	v[6] = average(l0[6], l1[6], dither);
+	v[7] = average(l0[7], l1[7], dither);
+}
+
+
 class DrumDecoder
 {
 	AdpcmDecoder adpcmDecoder;
 
-	int8_t bass_val;
-	int16_t bass_filtered;
+	int8_t bass_0, bass_1;
 
 	int32_t treble_amplitude;
 	uint16_t treble_increment;
@@ -204,43 +243,34 @@ public:
 	void trigger(const drums::Drum& drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
-		if (adpcmDecoder.isActive()) bass_val = adpcmDecoder.get();
-		bass_filtered = 0;
 		treble_amplitude = uint32_t(drum.treble_env.initial) << 8;
 		treble_increment = drum.treble_env.increment;
 		treble_filter.init(drum.treble_filter);
+		bass_0 = 0;
+		bass_1 = 0;
 	}
 
 	void decodeBlock(int16_t* dest)
 	{
-		for (int i=0; i<block_size; i++) {
-			dest[i] = 0;
-		}
-
 		// bass
 		if (adpcmDecoder.isActive()) {
-			int8_t bass_first = this->bass_val;
-			this->bass_val = adpcmDecoder.get();
-			int8_t bass_last = this->bass_val;
-
-			int16_t bass_inter = int16_t(bass_first) << 8;
-			int16_t bass_delta = int16_t(bass_last - bass_first) << (8-3);
+			this->bass_1 = bass_0;
+			this->bass_0 = adpcmDecoder.get();
+			int8_t v[block_size];
+			lerp8(this->bass_1, bass_0, v);
 			for (int i=0; i<block_size; i++) {
-				bass_filtered = ((bass_filtered+(rand()&1))>>1) + ((bass_inter+(rand()&1))>>1);
-				bass_inter += bass_delta;
-				dest[i] += bass_filtered >> vol_shr;
+				dest[i] += v[i];
 			}
 		}
 
 		// treble
 		if (this->treble_amplitude > 0) {
 			uint16_t amplitude = this->treble_amplitude >> 8;
-
+			if (amplitude>0xFF) amplitude = 0xFF;
 			for (int i=0; i<block_size; i++) {
-				int32_t noiz = int16_t(rand() | (rand() << 8));
-				noiz = int32_t(noiz * amplitude) >> 8;
-				noiz >>= vol_shr;
+				int8_t noiz = rand();
 				int16_t val = treble_filter.get(noiz);
+				val = (int16_t(val) * amplitude) >> 8;
 				dest[i] += val;
 			}			
 
@@ -294,10 +324,6 @@ void write_wav(const char* filename, int16_t* data, int num_samples, bool only_8
 		int8_t* wdata = (int8_t*)malloc(num_samples);
 		for (int i=0; i<num_samples; i++) {
 			int16_t val = data[i];
-			int limit = 1<<(8-vol_shr);
-			int dither = rand() % limit;
-			val += dither;
-			val >>= (8-vol_shr);
 			val += 128;
 			if (val<0) val = 0;
 			if (val>255) val = 255;
@@ -327,22 +353,22 @@ void write_dat(const char* filename, const drums::Drum& op)
 int main(int argc, char* argv[])
 {
 	static const int num_blocks = (sample_rate * 3) / block_size;
-	std::array<int16_t, num_blocks*block_size> buffer;
 
+	std::array<int16_t, num_blocks*block_size> buffer;
 	DrumDecoder decoder;
+
 	for (int drum_i=0; drum_i<drums::num; drum_i++) {
 		const drums::Drum& drum = drums::drums[drum_i];
 		const char* name = drums::names[drum_i];
+		for (auto& iter : buffer) iter = 0;
+
+		// render
 		decoder.trigger(drum);
 		for (int block_i=0; block_i<num_blocks; block_i++) {
-			std::array<int16_t, block_size> block_buffer;
-			decoder.decodeBlock(block_buffer.data());
-			for (int i=0; i<block_size; i++) {
-				int16_t val = block_buffer[i];
-				val = val * (32760. / 32768.);
-				buffer[block_i*block_size + i] = val;
-			}
+			decoder.decodeBlock(buffer.data() + block_i*block_size);
 		}
+
+		// save 
 		{
 			static char filename[256];
 			char* d = filename;
