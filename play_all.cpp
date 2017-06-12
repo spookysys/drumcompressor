@@ -6,8 +6,6 @@
 #include <math.h>
 #include <array>
 #include "export/use_all.inc"
-//#define USE_JK_BD_02
-//#define USE_JK_BD_06
 
 static const int block_size = 8;
 static const int sample_rate = 22050;
@@ -134,21 +132,6 @@ public:
 
 };
 
-template<typename T>
-class MinMaxRecorder
-{
-	T maxval = 0;
-	T minval = 0;
-public:
-	void operator()(T op) {
-		minval = std::max(minval, op);
-		maxval = std::max(maxval, op);
-	}
-	void dump(const char* name)
-	{
-		std::cout << std::string(name) << " min: " << minval << " max: " << maxval << std::endl;
-	}
-};
 
 static int8_t mulsu_shr8(int8_t a, uint8_t b)
 {
