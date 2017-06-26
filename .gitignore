@@ -9,3 +9,7 @@ export*/*
 *.dat
 *.obj
 *.zip
+*.auf
+*.au
+*.aup
+a.out
