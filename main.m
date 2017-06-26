@@ -88,8 +88,10 @@ end
 function [data, sample_rate] = load_input(filename)
 	[data, sample_rate] = audioread(filename);
     data = sum(data, 2); % combine channels
-    scaler = max(abs(data)); % normalize
-    data = data / scaler; % normalize
+    if (~startsWith(filename, 'amen')) % do not normalize the amen break beats
+        scaler = max(abs(data)); % normalize
+        data = data / scaler; % normalize
+    end
 end
 
 

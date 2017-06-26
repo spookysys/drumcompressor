@@ -13,9 +13,14 @@ function export(wav_filename, bass_data, treble_b, treble_a, treble_env_fit)
     % bass start
     fprintf(struct_fid, '{\n');
     
-    % bass data
-    fprintf(struct_fid, ['    sizeof(' lower(name) '_data),\n']);
-    fprintf(struct_fid, ['    ' lower(name) '_data // bass data\n']);
+    % bass data include
+    if (~isempty(bass_data))
+        fprintf(struct_fid, ['    sizeof(' lower(name) '_data),\n']);
+        fprintf(struct_fid, ['    ' lower(name) '_data // bass data\n']);
+    else
+        fprintf(struct_fid, ['    0,\n']);
+        fprintf(struct_fid, ['    nullptr\n']);
+    end
     
     % bass end
     fprintf(struct_fid, '}\n');
@@ -46,7 +51,7 @@ function export_env(fid, env_fit, comment)
     end
     coeff(isnan(coeff)) = 0;
         
-    digi = round(coeff .* [-2^(19) 2^(8)]);
+    digi = max(0, round(coeff .* [-2^(19) 2^(8)]));
     
     % Result
     fprintf(fid, '// %.16f, %.16f // %s floats\n', coeff(1), coeff(2), comment);
@@ -83,7 +88,7 @@ function [data_fid, struct_fid, name] = start(wav_filename, has_bass_data)
      fid = fopen(fullfile('export', 'datas.inc'), 'a');
      fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
      if has_bass_data
-         fprintf(fid, [ 'const unsigned char ' name '_data[] = {\n']);
+         fprintf(fid, [ 'static const unsigned char ' name '_data[] = {\n']);
          fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
          fprintf(fid, [ '};\n']);
      else
