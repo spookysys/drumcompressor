@@ -91,8 +91,6 @@ function [data_fid, struct_fid, name] = start(wav_filename, has_bass_data)
          fprintf(fid, [ 'static const unsigned char ' name '_data[] = {\n']);
          fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
          fprintf(fid, [ '};\n']);
-     else
-         fprintf(fid, [ 'static const unsigned char* ' name '_data = nullptr;\n']);
      end
      fprintf(fid, [ '#endif\n']);
      fclose(fid);
