@@ -1,3 +1,6 @@
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -23,8 +26,8 @@ namespace drums
 {
 struct DrumEnv
 {
-	uint16_t increment;
-	uint16_t initial;
+	uint16_t volume;
+	uint16_t slope;
 };
 
 struct DrumFilter
@@ -153,7 +156,19 @@ namespace mymath
     static int8_t mul_s8_s16s8_shr8(int16_t a, int8_t b)
     {
         return (a*b)>>8;
+	}
+	
+
+    static int16_t mul_s16_s16s8_shr8(int16_t a, int8_t b)
+    {
+        return (int32_t(a)*b)>>8;
+    }	
+
+    static uint16_t mul_u16_u16u16_shr16(uint16_t a, uint16_t b)
+    {
+        return (uint32_t(a)*b)>>16;
     }
+	
 }
 
 class Filter
@@ -178,18 +193,19 @@ class Filter
 	}
 	int8_t get(int8_t xx)
 	{
-		int8_t a2_y1 = mymath::mul_s8_s16s8_shr8(a2, yn_1);
-		int8_t a3_y2 = mymath::mul_s8_s16s8_shr8(a3, yn_2);
 		int8_t b1_xx = mymath::mul_s8_s8s8_shr8(b1, xx);
 		int8_t b2_x1 = mymath::mul_s8_s8s8_shr8(b2, xn_1);
 		int8_t b3_x2 = mymath::mul_s8_s8s8_shr8(b3, xn_2);
-		int8_t yy = b1_xx + b2_x1 + b3_x2 - a2_y1 - a3_y2;
-
 		this->xn_2 = this->xn_1;
-		this->yn_2 = this->yn_1;
 		this->xn_1 = xx;
-		this->yn_1 = yy;
 
+		int16_t a2_y1 = mymath::mul_s16_s16s8_shr8(a2, yn_1);
+		int16_t a3_y2 = mymath::mul_s16_s16s8_shr8(a3, yn_2);
+		int16_t yy = int8_t(b1_xx + b2_x1 + b3_x2) - a2_y1 - a3_y2;
+		if (yy > 127) yy = 127;
+		if (yy < -128) yy = -128;
+		this->yn_2 = this->yn_1;
+		this->yn_1 = yy;
 		return yy;
 	}
 };
@@ -222,8 +238,9 @@ class DrumDecoder
 
 	int8_t bass_0, bass_1;
 
-	uint32_t treble_amplitude;
-	uint16_t treble_increment;
+	uint32_t treble_volume;
+	uint32_t treble_half;
+	uint32_t treble_slope;
 
 	Filter treble_filter;
 
@@ -231,8 +248,9 @@ class DrumDecoder
 	void trigger(const drums::Drum &drum)
 	{
 		adpcmDecoder.trigger(drum.bass_sample);
-		treble_amplitude = uint32_t(drum.treble_env.initial) << 8;
-		treble_increment = drum.treble_env.increment;
+		treble_volume = uint32_t(drum.treble_env.volume) << 16;
+		treble_half = treble_volume >> 1;
+		treble_slope = uint32_t(drum.treble_env.slope) << 1;
 		treble_filter.init(drum.treble_filter);
 		bass_0 = 0;
 		bass_1 = 0;
@@ -254,22 +272,25 @@ class DrumDecoder
 		}
 
 		// treble
-		if (this->treble_amplitude)
+		if (this->treble_volume)
 		{
-			uint8_t amplitude = (this->treble_amplitude >> 16) ? 0xFF : (this->treble_amplitude >> 8);
+			uint16_t vol_ = this->treble_volume >> 16;
+			uint8_t vol = (vol_ > 255) ? 255 : vol_;
 
 			for (int i = 0; i < block_size; i++)
 			{
 				int8_t noiz = rand();
 				int8_t val = treble_filter.get(noiz);
-				val = mymath::mul_s8_s8u8_shr8(val, amplitude);
+				val = mymath::mul_s8_s8u8_shr8(val, vol);
 				dest[i] += val;
 			}
 
-			if (this->treble_amplitude >= this->treble_increment)
-				this->treble_amplitude -= this->treble_increment;
-			else
-				this->treble_amplitude = 0;
+			if (treble_half < treble_slope) {
+				treble_half = treble_volume >> 1;
+				treble_slope = treble_slope >> 1;
+			}
+			treble_volume -= treble_slope;
+			treble_half -= treble_slope;
 		}
 	}
 };
@@ -349,9 +370,10 @@ void write_dat(const char *filename, const drums::Drum &op)
 	fclose(fid);
 }
 
+
 int main(int argc, char *argv[])
 {
-	static const int num_blocks = (sample_rate * 3) / block_size;
+	static const int num_blocks = (sample_rate * 5) / block_size;
 
 	std::array<int16_t, num_blocks * block_size> buffer;
 	DrumDecoder decoder;
@@ -360,6 +382,8 @@ int main(int argc, char *argv[])
 	{
 		const drums::Drum &drum = drums::drums[drum_i];
 		const char *name = drums::names[drum_i];
+		printf("%s\n", name);
+		
 		for (auto &iter : buffer)
 			iter = 0;
 
@@ -372,9 +396,17 @@ int main(int argc, char *argv[])
 
 		// save
 		{
+			static const char* dirname = "out_final";
+			struct stat st = {0};
+			if (stat(dirname, &st) == -1) {
+				mkdir(dirname, 0700);
+			}
+
 			static char filename[256];
 			char *d = filename;
-			strcpy(d, "out_final/");
+			strcpy(d, dirname);
+			d += strlen(d);
+			strcpy(d, "/");
 			d += strlen(d);
 			strcpy(d, name);
 			d += strlen(d);

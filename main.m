@@ -80,7 +80,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     save_output(outfile, mix / 128, sample_rate);
     
     % Export to C
-    export(infile, bass_adpcm_data, treble_color_b, treble_color_a, treble_env_fit);
+    export(infile, bass_adpcm_data, treble_color_b, treble_color_a, treble_env_fit, block_size);
 end
 
 
@@ -131,7 +131,7 @@ function [env_fit, color_b, color_a] = analyze_treble(data_in, sample_rate, bloc
     save_output([checkdir 'treble_cut.wav'], treble, sample_rate);
     
     % fit envelope
-    env_fit = fit((0:length(treble)-1)', env, 'poly1');
+    env_fit = fit((0:length(treble)-1)', env, 'exp1');
     
     % Extract treble color
     num_freqs = 2^18;
@@ -152,9 +152,7 @@ function [env_fit, color_b, color_a] = analyze_treble(data_in, sample_rate, bloc
     % Adjust envelope so volume is correct in the end
     treble_norm = treble ./ env_smooth;
     volume_adj = (128 / mean(abs(hilbert(colored)))) * mean(abs(hilbert(treble_norm)));
-    env_fit.p1 = env_fit.p1 * volume_adj;
-    env_fit.p2 = env_fit.p2 * volume_adj;
-%    env_fit.p3 = env_fit.p3 * volume_adj;
+    env_fit.a = env_fit.a * volume_adj;
 end
 
 %function ret = my_fitoptions()

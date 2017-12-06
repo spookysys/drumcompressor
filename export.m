@@ -1,11 +1,11 @@
-function export(wav_filename, bass_data, treble_b, treble_a, treble_env_fit)
+function export(wav_filename, bass_data, treble_b, treble_a, treble_env_fit, block_size)
     [data_fid, struct_fid, name] = start(wav_filename, ~isempty(bass_data));
     
     % output bass data
     export_bass_data(data_fid, bass_data);
     
     % output treble envelope
-    export_env(struct_fid, treble_env_fit, 'treble envelope');
+    export_env(struct_fid, treble_env_fit, block_size, 'treble envelope');
 
     % output treble filter
     export_filter(struct_fid, treble_b, treble_a);
@@ -44,18 +44,24 @@ function export_bass_data(fid, bass_data)
     end
 end
 
-function export_env(fid, env_fit, comment)
+function export_env(fid, env_fit, block_size, comment)
     coeff = coeffvalues(env_fit);
     if length(coeff) ~= 2
         coeff = [0 0];
     end
     coeff(isnan(coeff)) = 0;
-        
-    digi = max(0, round(coeff .* [-2^(19) 2^(8)]));
     
+    amplitude = round(256 * coeff(1));
+    
+    halftime = log(0.5) / coeff(2);
+    halftime = halftime / block_size;
+    halftime_ = max(64, halftime);
+    slope = 65535*64 / halftime_;
+    slope = round(slope);
+       
     % Result
-    fprintf(fid, '// %.16f, %.16f // %s floats\n', coeff(1), coeff(2), comment);
-    fprintf(fid, '{ %d, %d }, // %s\n', digi(1), digi(2), comment);
+    fprintf(fid, '// %.16f, %.16f // %s floats\n', amplitude, slope, comment);
+    fprintf(fid, '{ %d, %d }, // %s\n', amplitude, slope, comment);
  end
 
 function export_filter(fid, b, a)
