@@ -60,10 +60,10 @@ function export_env(fid, env_fit, comment)
 
 function export_filter(fid, b, a)
     ex = 6; % empirical
-    tmp = [a b];
-    tmp = tmp .* [0 64 128 256 256 128];
-    tmp = round(tmp);
-    tmp = max(-128, min(127, tmp));
+    a_int = round(a .* 256);
+    b_int = round(b .* 256);
+    b_int = max(-128, min(127, b_int));
+    tmp = [a_int b_int];
     fprintf(fid, '// %f, %f, %f, %f, %f, %f // treble filter floats\n' , a(1), a(2), a(3), b(1), b(2), b(3));
     fprintf(fid, '{ %d, %d, %d, %d, %d }, // treble filter\n' , tmp(2), tmp(3), tmp(4), tmp(5), tmp(6));
 end

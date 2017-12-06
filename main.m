@@ -1,16 +1,16 @@
 rng(1234);
 block_size = 8;
 adpcm_bits = 2;
-[~,~,~] = mkdir('out');
-[~,~,~] = mkdir('out_check');
+[~,~,~] = mkdir('out_matlab');
+[~,~,~] = mkdir('out_debug');
 [~,~,~] = mkdir('export');
 
 % This has a problem with bass-crop
-files = dir('in/*.wav');
+files = dir('in/A*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
-    process_file(['in/' filename], ['out/' filename], ['out_check/' filename '/'], block_size, adpcm_bits);
+    process_file(['in/' filename], ['out_matlab/' filename], ['out_debug/' filename '/'], block_size, adpcm_bits);
 end
 
 
@@ -29,7 +29,7 @@ function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
         
     % write stats
     fid = fopen([checkdir 'stats.txt'],'w');
-    size1 = 4 + 6 + 2; % treble_env, treble_filter, bass_length
+    size1 = 4 + 7 + 2; % treble_env, treble_filter, bass_length
     size2 = length(bass) / samples_per_byte; % encoded bass size in bytes (one sample in this array is one block, and 2 bits per block)
     size = size1 + size2;
     fprintf(fid, [ 'Original length: ' num2str(orig_len) '\r\n']);

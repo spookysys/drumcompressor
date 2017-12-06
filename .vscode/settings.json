@@ -3,6 +3,12 @@
 		"*.map": "json",
 		"array": "cpp",
 		"xiosbase": "cpp",
-		"xutility": "cpp"
+		"xutility": "cpp",
+		"istream": "cpp",
+		"tuple": "cpp",
+		"type_traits": "cpp",
+		"utility": "cpp",
+		"xlocnum": "cpp",
+		"xmemory": "cpp"
 	}
 }
