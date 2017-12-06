@@ -7,8 +7,9 @@
 #include <array>
 #include "export/use_all.inc"
 
-static const int block_size = 8;
-static const int sample_rate = 22050;
+static constexpr int block_size = 16;
+static constexpr int block_size_log2 = 4;
+static constexpr int sample_rate = 22050;
 
 using namespace std;
 
@@ -201,17 +202,18 @@ static inline int8_t average(int8_t a, int8_t b, uint8_t &dither)
 }
 
 // lerp
-static void lerp8(int8_t start, int8_t end, int8_t v[8])
+static void lerp8(int8_t start, int8_t end, int8_t v[block_size])
 {
-	uint8_t dither = rand();
-	v[0] = start;
-	v[4] = average(v[0], end, dither);
-	v[2] = average(v[0], v[4], dither);
-	v[6] = average(v[4], end, dither);
-	v[1] = average(v[0], v[2], dither);
-	v[3] = average(v[2], v[4], dither);
-	v[5] = average(v[4], v[6], dither);
-	v[7] = average(v[6], end, dither);
+	int16_t iter = start << block_size_log2;
+	int16_t step = int16_t(end) - int16_t(start);
+	int16_t dither = (uint16_t(uint8_t(rand())) << 8) | uint8_t(rand());
+	
+	for (int i=0; i<block_size; i++)
+	{
+		v[i] = ((iter >> (block_size_log2-1)) + (dither & 1)) >> 1;
+		dither >>= 1;
+		iter += step;
+	}
 }
 
 class DrumDecoder

@@ -1,12 +1,12 @@
 rng(1234);
-block_size = 8;
+block_size = 16;
 adpcm_bits = 2;
 [~,~,~] = mkdir('out_matlab');
 [~,~,~] = mkdir('out_debug');
 [~,~,~] = mkdir('export');
 
 % This has a problem with bass-crop
-files = dir('in/A*.wav');
+files = dir('in/*.wav');
 for file = files'
     filename = file.name;
     disp(['Processing ' filename]);
