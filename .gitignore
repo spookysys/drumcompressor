@@ -14,3 +14,4 @@ export*/*
 *.au
 *.aup
 a.out
+_*
