@@ -1,6 +1,6 @@
-#include <sys/types.h>
+//#include <sys/types.h>
+//#include <unistd.h>
 #include <sys/stat.h>
-#include <unistd.h>
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
@@ -8,6 +8,8 @@
 #include <iostream>
 #include <math.h>
 #include <array>
+
+#define PROGMEM
 #include "export/use_all.inc"
 
 static constexpr int block_size = 16;
@@ -153,22 +155,12 @@ namespace mymath
         return (int16_t(a)*b)>>8;
     }
 
-    static int8_t mul_s8_s16s8_shr8(int16_t a, int8_t b)
-    {
-        return (a*b)>>8;
-	}
-	
 
     static int16_t mul_s16_s16s8_shr8(int16_t a, int8_t b)
     {
         return (int32_t(a)*b)>>8;
     }	
 
-    static uint16_t mul_u16_u16u16_shr16(uint16_t a, uint16_t b)
-    {
-        return (uint32_t(a)*b)>>16;
-    }
-	
 }
 
 class Filter

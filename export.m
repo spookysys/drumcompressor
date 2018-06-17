@@ -94,7 +94,7 @@ function [data_fid, struct_fid, name] = start(wav_filename, has_bass_data)
      fid = fopen(fullfile('export', 'datas.inc'), 'a');
      fprintf(fid, [ '#ifdef USE_' upper(name) '\n']);
      if has_bass_data
-         fprintf(fid, [ 'static const unsigned char ' name '_data[] = {\n']);
+         fprintf(fid, [ 'static const unsigned char ' name '_data[] PROGMEM = {\n']);
          fprintf(fid, [ '#include \"data/' name '.inc\"\n']);
          fprintf(fid, [ '};\n']);
      end
