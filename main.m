@@ -17,11 +17,18 @@ end
 function process_file(infile, outfile, checkdir, block_size, adpcm_bits)
     samples_per_byte = 8 / adpcm_bits;
     [~,~,~] = mkdir(checkdir);
-    [data_in, sample_rate] = load_input(infile);
+    [data_in, data_in_norm, sample_rate] = load_input(infile);
     save_output([checkdir 'orig.wav'], data_in, sample_rate);
     
-    [bass] = analyze_bass(data_in, sample_rate, block_size, samples_per_byte, checkdir);
-    [treble_env_fit, treble_color_b, treble_color_a] = analyze_treble(data_in, sample_rate, block_size, checkdir);
+    if (contains(infile, 'amen', 'IgnoreCase', true)) % do not normalize the amen break beats    
+        data_in_treb = data_in
+        data_in_bass = mean([data_in, data_in_norm], 2);
+    else
+        data_in_treb = data_in_norm
+        data_in_bass = data_in_norm
+    end
+    [bass] = analyze_bass(data_in_bass, sample_rate, block_size, samples_per_byte, checkdir);
+    [treble_env_fit, treble_color_b, treble_color_a] = analyze_treble(data_in_treb, sample_rate, block_size, checkdir);
 
     orig_len = length(data_in);
     %short_len = max(ceil(treble_cut_point/block_size)*block_size, length(bass)*block_size);
@@ -85,13 +92,11 @@ end
 
 
 % Load wav-file
-function [data, sample_rate] = load_input(filename)
+function [data, data_normalized, sample_rate] = load_input(filename)
 	[data, sample_rate] = audioread(filename);
     data = sum(data, 2); % combine channels
-    if (~startsWith(filename, 'amen')) % do not normalize the amen break beats
-        scaler = max(abs(data)); % normalize
-        data = data / scaler; % normalize
-    end
+    scaler = max(abs(data)); % normalize
+    data_normalized = data / scaler; % normalize
 end
 
 
